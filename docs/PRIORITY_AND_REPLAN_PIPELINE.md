@@ -141,7 +141,8 @@ dashed-outline shapes with dashed support arrows. They sit off the authority
 path: the deterministic gates and functions remain on the solid-line authority
 path. A `Start a new pass at Step ...` connector ends the current pass and names
 where the next pass begins. This keeps the numbered stages in reading order
-without drawing long backward arrows across the chart.
+without drawing long backward arrows across the chart. Matching circular `4B`
+connectors show that the Step 9 change path continues at the Step 4B entrance.
 
 ```mermaid
 graph TB
@@ -209,11 +210,11 @@ graph TB
 
     subgraph changeplan["Step 4B: Fix a changed plan"]
         direction LR
-        change1["Keep active and unaffected work fixed"] --> change2["Reconsider only the changed activity and dependent activities"] --> change3["Try allowed weeks closest to the old plan"]
+        entry4b(("4B")) --> change1["Keep active and unaffected work fixed"] --> change2["Reconsider only the changed activity and dependent activities"] --> change3["Try allowed weeks closest to the old plan"]
     end
 
     choose -->|New plan| make1
-    choose -->|Changed plan| change1
+    choose -->|Changed plan| entry4b
     make4 --> check1
     change3 --> check1
 
@@ -273,7 +274,7 @@ graph TB
     outcome -->|Cannot continue| restart2(["Start a new pass at Step 2 and record the roadblock"])
 
     publish3 --> changed{"Did an important input change?"}
-    changed -->|Yes| restart4(["Start a new pass at Step 4B and make a changed plan"])
+    changed -->|Yes| return4b(("4B"))
 
     %% Layout-only spine keeps the numbered stages in top-to-bottom order.
     receive1 ~~~ status1
@@ -291,12 +292,14 @@ graph TB
     classDef action fill:#ffe8cc,stroke:#d9480f,color:#7c2d12
     classDef output fill:#c5f6fa,stroke:#0c8599,color:#155e75
     classDef ai fill:#fff9db,stroke:#e8590c,color:#664d03,stroke-dasharray: 5 5
+    classDef connector fill:#fff4e6,stroke:#e67700,stroke-width:2px,color:#7c2d12
     class start,receive1,receive2,receive3,aidraft,status1,status2 input
     class inputkind,complete,statuscheck,status3,returncheck,userreturn,choose,pass,retry,approved,outcome,changed decision
     class schemagate,order1,order2,order3,order4,make1,make2,make3,make4,change1,change2,change3,check1,check2,check3 process
-    class missing1,missing2,cancelled,interrupted,deferred,wait,repair1,failed1,failed2,failed3,restart1,restart2,restart4 action
+    class missing1,missing2,cancelled,interrupted,deferred,wait,repair1,failed1,failed2,failed3,restart1,restart2 action
     class explain1,explain2,explain3,review1,review2,publish1,publish2,publish3,run1,run2,run3,done output
     class aiadapter,aisuggest,airoadblock,airexplain ai
+    class entry4b,return4b connector
 ```
 
 ### What the main terms mean
