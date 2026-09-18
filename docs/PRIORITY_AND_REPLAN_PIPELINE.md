@@ -49,30 +49,132 @@ operator request, but it cannot declare a plan valid or publish it.
    last moment by urgent defects, monitoring alerts, access loss, or weather;
    all unfinished work must return to planning.
 
+## AI harness architecture
+
+Status: design recommendation, not yet implemented.
+
+The deterministic railway scheduler remains the sole authority for feasibility,
+validation, publication and release. AI assists at the edges: reading mixed
+inputs, explaining rule failures, and turning plain-language roadblocks into
+structured records. AI never decides, never approves, and never touches the
+solver or validator controls. Treat every AI output as an untrusted draft until
+the next deterministic gate passes or the user accepts it.
+
+### Step 1 inputs: official CSVs and optional AI adapter
+
+The official input is the eight PS1 CSV files. The deterministic loader reads
+them directly. An optional AI-assisted adapter may also accept supported mixed
+formats (for example, a combined spreadsheet or a reformatted export). The
+adapter must:
+
+1. Accept a mixed-format input and map it to the canonical eight-table draft.
+2. Attach row-level source provenance to every mapped record (file name, sheet,
+   row number or source identifier).
+3. Never feed the solver directly. The canonical draft passes through the
+   deterministic schema gate before anything reaches scheduling code.
+4. Never invent missing values. If a required field is absent or ambiguous, the
+   adapter marks it as missing and lets the schema gate reject it.
+
+The adapter is advisory. It produces a candidate table set; the schema gate
+decides whether that set is complete and valid.
+
+### Deterministic schema gate
+
+After any loading step (direct CSV or adapter draft), a deterministic schema
+gate runs before scheduling begins. It checks:
+
+- Required tables: all eight canonical tables are present.
+- Required fields: every mandatory column exists in each table.
+- Types and enums: numeric fields are numeric, date fields are valid dates,
+  enum fields match their allowed values (for example, `activity_type` is
+  `Renewal` or `Construction`; `access_type` is `PM`, `PC`, or `C`).
+- Date ordering: `planned_start_date` is not after `planned_completion_date`.
+- Relationships: referenced activity IDs resolve, predecessor chains are valid.
+
+On failure the gate produces exact deterministic errors: the missing file or
+field name, the table, the row if applicable, and the expected type or value.
+AI may inspect task-scoped evidence (the source mapping, the schema error, and
+the relevant input rows), explain likely causes, and suggest corrections to the
+user. AI must ask the user when uncertain. The gate fails closed: scheduling
+does not begin until deterministic validation passes.
+
+### AI roadblock assistance
+
+If a user records that an activity cannot proceed, AI may convert the plain
+language reason into a proposed Cancelled, Interrupted, or Deferred record. The
+record includes the user-entered reason, the prior plan version, and (for
+Deferred) a return date. The user confirms the record. Deterministic code
+performs the state transition. AI does not move activities on its own.
+
+### AI explanation of rule failures
+
+When no valid plan is found, the deterministic solver and validator produce
+structured rule failures: the specific rule number, the activity, the week,
+the location, and the evidence. AI explains each failure in simple English with
+exact references to rule, activity, week, location and evidence. AI may draft a
+stakeholder summary. AI cannot change constraints, approve a plan, declare
+feasibility, publish, or release CSVs.
+
+### Evidence harness
+
+A permissioned, auditable read-only evidence harness records every material
+artifact:
+
+| Evidence ID | What it holds |
+| --- | --- |
+| `INPUT-{id}` | Canonical input tables with row-level source provenance |
+| `SCHEMA-{id}` | Schema gate result: pass or the exact list of errors |
+| `SCHEDULE-{id}` | Solver trace: which placements were tried, which succeeded |
+| `VALIDATE-{id}` | Validator result: rule outcomes, warnings, and pass/fail |
+| `DIFF-{id}` | Plan diff between the previous and current version |
+| `STATUS-{id}` | User status history: every state change with reason and timestamp |
+
+Every AI interaction that reads evidence logs the evidence IDs it accessed and
+any uncertainty in its reasoning. The harness never exposes secrets, API keys,
+connection strings, or AI chain-of-thought.
+
 ## Recommended system flow
 
 Each large labelled group below is one main step. The smaller boxes inside it
-show exactly what happens during that step.
+show exactly what happens during that step. AI assistance nodes appear as
+dashed-outline shapes with dashed support arrows. They sit off the authority
+path: the deterministic gates and functions remain on the solid-line authority
+path.
 
 ```mermaid
 graph TB
     start(["New input files or a user status change"])
+    inputkind{"Are these the official eight CSV files?"}
 
     subgraph receive["Step 1: Load the supplied information"]
         direction LR
         receive1["Load the eight PS1 CSV files"] --> receive2["Read Renewal or Construction from activity_type"] --> receive3["Read workload, planned start, predecessor and priorities"]
     end
 
-    start --> receive1
-    receive3 --> complete{"Did all required files and fields load?"}
+    aiadapter["AI adapter: map a supported mixed format to a draft"]
+    aidraft["Untrusted eight-table draft with source references"]
+    schemagate["Deterministic schema gate checks tables, fields, types, values and links"]
+    start --> inputkind
+    inputkind -->|Yes| receive1
+    inputkind -->|No, supported format| aiadapter
+    aiadapter -.->|proposes| aidraft
+    receive3 --> schemagate
+    aidraft --> schemagate
+    schemagate --> complete{"Did all required files and fields pass?"}
     complete -->|No| missing1["List the missing file or field"]
-    missing1 --> missing2["Ask the user to correct the input"]
-    missing2 --> receive1
+    missing1 --> missing2["User corrects the source or confirms a mapping"]
+    missing2 --> inputkind
+    missing1 -.-> aisuggest["AI explains the likely cause and asks when uncertain"]
+    aisuggest -.->|advisory only| missing2
 
     subgraph status["Step 2: Record work that cannot proceed"]
         direction LR
         status1["User selects the activity"] --> status2["User enters the reason"] --> status3{"Which list should it enter?"}
     end
+
+    airoadblock["AI drafts a status and stakeholder-friendly reason"]
+    status2 -.->|asks for help| airoadblock
+    airoadblock -.->|user reviews the draft| status3
 
     complete -->|Yes| statuscheck{"Did the user mark an activity unable to proceed now?"}
     statuscheck -->|Yes| status1
@@ -128,6 +230,10 @@ graph TB
         failed1["Show the rules that block the plan"] --> failed2["Show which lock or input must change"] --> failed3["Send the decision to the planner"]
     end
 
+    airexplain["AI explains failures using rule, activity, week, location and evidence"]
+    failed2 -.->|supplies checked evidence| airexplain
+    airexplain -.->|advisory only| failed3
+
     retry -->|No| failed1
 
     subgraph explain["Step 6: Explain the checked plan"]
@@ -145,7 +251,7 @@ graph TB
     end
 
     review2 --> approved{"Did the planner approve this version?"}
-    approved -->|No, change input| receive1
+    approved -->|No, change input| inputkind
 
     subgraph publish["Step 8: Publish and protect the approved plan"]
         direction LR
@@ -172,11 +278,13 @@ graph TB
     classDef process fill:#e5dbff,stroke:#5f3dc4,color:#3b2f72
     classDef action fill:#ffe8cc,stroke:#d9480f,color:#7c2d12
     classDef output fill:#c5f6fa,stroke:#0c8599,color:#155e75
-    class start,receive1,receive2,receive3,status1,status2 input
-    class complete,statuscheck,status3,returncheck,userreturn,choose,pass,retry,approved,outcome,changed decision
-    class order1,order2,order3,order4,make1,make2,make3,make4,change1,change2,change3,check1,check2,check3 process
+    classDef ai fill:#fff9db,stroke:#e8590c,color:#664d03,stroke-dasharray: 5 5
+    class start,receive1,receive2,receive3,aidraft,status1,status2 input
+    class inputkind,complete,statuscheck,status3,returncheck,userreturn,choose,pass,retry,approved,outcome,changed decision
+    class schemagate,order1,order2,order3,order4,make1,make2,make3,make4,change1,change2,change3,check1,check2,check3 process
     class missing1,missing2,cancelled,interrupted,deferred,wait,repair1,failed1,failed2,failed3 action
     class explain1,explain2,explain3,review1,review2,publish1,publish2,publish3,run1,run2,run3,done output
+    class aiadapter,aisuggest,airoadblock,airexplain ai
 ```
 
 ### What the main terms mean
@@ -329,6 +437,42 @@ Do not build the full enterprise workflow before the deadline. The highest-value
 7. Present the AI risk mitigation explicitly: AI parses/explains; deterministic code checks; a human approves the version.
 
 This moves the product beyond merely answering the dataset while keeping the existing solver/validator/exporter as the competition-safe core.
+
+## AI harness boundary
+
+AI operates inside a permissioned harness with read-only access to operational
+evidence. It may write drafts into a separate review area, but it cannot write
+canonical input, plan, status, approval, or export records. The following table
+defines what AI may and may not do.
+
+### Allowed actions
+
+| Action | Scope |
+| --- | --- |
+| Read canonical inputs | Evidence IDs `INPUT-*` only, with logged access |
+| Read schema errors | Evidence IDs `SCHEMA-*` for the current validation run |
+| Read solver trace | Evidence IDs `SCHEDULE-*` for the current or prior run |
+| Read validator result | Evidence IDs `VALIDATE-*` for the current or prior run |
+| Read plan diff | Evidence IDs `DIFF-*` for the current replan |
+| Read status history | Evidence IDs `STATUS-*` for the affected activities |
+| Explain rule failures | Simple English with exact rule, activity, week, location and evidence references |
+| Draft stakeholder summary | Plain-language summary for failed or successful plans |
+| Propose mixed-format mapping | AI adapter produces a canonical draft with row-level provenance |
+| Suggest input corrections | Explain likely causes of schema errors and suggest fixes to the user |
+| Draft roadblock record | Convert plain language into a proposed Cancelled, Interrupted or Deferred record |
+
+### Forbidden actions
+
+| Action | Reason |
+| --- | --- |
+| Change solver constraints | Only the user and deterministic code may modify inputs or rules |
+| Approve a plan | Approval is a human decision only |
+| Declare feasibility | Feasibility is determined by the deterministic validator |
+| Publish or release CSVs | Publication is a deterministic gate triggered by human approval |
+| Invent missing values | The adapter and AI must not fabricate data for missing fields |
+| Execute state transitions | AI proposes; deterministic code performs the transition |
+| Expose secrets or chain-of-thought | The harness logs evidence IDs and uncertainty, never secrets or reasoning internals |
+| Override schema gate failures | Scheduling does not begin until deterministic validation passes |
 
 ## Evidence boundary
 
