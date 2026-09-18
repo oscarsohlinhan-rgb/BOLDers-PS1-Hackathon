@@ -12,37 +12,42 @@ policy.
 
 Do not implement the sketch as one permanent category-sorted queue.
 
-Use category priority only as a configurable policy default inside a larger
-pipeline. Safety, deferment risk, readiness, hard railway constraints, locked
-work, and human approval can all override a category label. The deterministic
-solver and validator remain the only feasibility authority. AI may structure
-an operator request and explain a checked result, but it cannot declare a plan
-feasible or publish it.
+Use the values already supplied in the files. `activity_type` is `Renewal` or
+`Construction`. Do not rename those values to maintenance or project because
+the official repository does not define that mapping. The brief says in-house
+maintenance has already reserved its nights before the remaining
+`LOCATION_SUPPLY` is passed to this scheduler.
+
+Add user-managed status on top of the supplied data. If an activity cannot
+proceed, the user selects it, enters a reason, and moves it to the Cancelled,
+Interrupted, or Deferred list. It is not placed automatically again until a
+user returns it to planning. Fixed scheduling code and the independent
+validator remain the feasibility authority. AI may help read or explain an
+operator request, but it cannot declare a plan valid or publish it.
 
 ## Why the original sketch needs revision
 
-1. `cancelled` and `deferred` are lifecycle states, not intrinsic work types. A
-   cancelled project must not automatically outrank safety-critical preventive
-   maintenance merely because it entered the cancelled queue.
-2. `defect` is not enough to establish urgency. The consultation made safety
-   consequence the dominant factor; a low-risk defect and an accident-critical
-   condition alert should not receive the same band.
-3. Closest end date is too weak. Rank by remaining slack against the latest
-   permissible completion, required workload, recurrence window, and available
-   access. A large job with an apparently later date can be more urgent.
+1. `cancelled`, `interrupted`, and `deferred` are user-managed activity states.
+   They are not values in the supplied `activity_type` column.
+2. The supplied `activity_type` values are `Renewal` and `Construction`.
+   `access_type` is separate and contains `PM`, `PC`, or `C`, which describe
+   possession roles rather than whether the work is maintenance or project.
+3. Planned start, planned completion, and contract completion dates already
+   come from the files. The user does not need to enter a due date as the cause
+   for cancellation or interruption.
 4. Sorting cannot prove that a schedule works. Location supply, buffers,
    predecessors, possession mix, workfront limits, ECLO rules, and locked work
    must be checked by code.
 5. Cancellation is not instant reallocation. The operator described cancelled
    work returning as full workload to a later planning cycle to compete again.
-6. Deferment needs a risk limit. Preventive work can move within a window, but
-   repeated deferment eventually makes it mandatory after risk assessment.
+6. Deferred work needs a return date. It returns to the ready list when that
+   date arrives, not because the system labels it overdue.
 7. The sketch has no proposal version, human approval, or stale-plan state.
    Real changes after approval must invalidate the affected proposal and require
    a new checked decision.
 8. The sketch treats execution as terminal. Real work can be stopped at the
    last moment by urgent defects, monitoring alerts, access loss, or weather;
-   interrupted work may re-enter at full workload.
+   all unfinished work must return to planning.
 
 ## Recommended system flow
 
@@ -51,59 +56,61 @@ show exactly what happens during that step.
 
 ```mermaid
 graph TB
-    start(["New job or changed condition"])
+    start(["New input files or a user status change"])
 
-    subgraph receive["Step 1: Receive the information"]
+    subgraph receive["Step 1: Load the supplied information"]
         direction LR
-        receive1["Read the form, file or alert"] --> receive2["Use the standard field names"] --> receive3["Save the source and time"]
+        receive1["Load the eight PS1 CSV files"] --> receive2["Read Renewal or Construction from activity_type"] --> receive3["Read workload, planned start, predecessor and priorities"]
     end
 
     start --> receive1
-    receive3 --> complete{"Is the required information complete?"}
-    complete -->|No| missing1["List the missing information"]
-    missing1 --> missing2["Ask the operator to provide it"]
+    receive3 --> complete{"Did all required files and fields load?"}
+    complete -->|No| missing1["List the missing file or field"]
+    missing1 --> missing2["Ask the user to correct the input"]
     missing2 --> receive1
 
-    subgraph understand["Step 2: Understand the job"]
+    subgraph status["Step 2: Record work that cannot proceed"]
         direction LR
-        understand1["Mark it as maintenance or project work"] --> understand2["Record why it entered the plan"] --> understand3["Record its status, safety level and due dates"]
+        status1["User selects the activity"] --> status2["User enters the reason"] --> status3{"Which list should it enter?"}
     end
 
-    complete -->|Yes| understand1
-    understand3 --> holdcheck{"Is there a known reason to hold it outside planning?"}
-
-    subgraph blocked["If blocked: record a useful answer"]
-        direction LR
-        blocked1["Name the exact reason"] --> blocked2["State the first known recovery time"] --> blocked3["State the smallest safe recovery action"]
-    end
-
-    holdcheck -->|Yes| blocked1
-    blocked3 --> wait["Wait until the missing condition changes"]
-    wait --> holdcheck
+    complete -->|Yes| statuscheck{"Did the user mark an activity unable to proceed now?"}
+    statuscheck -->|Yes| status1
+    status3 -->|Not started| cancelled["Cancelled list: full workload waits"]
+    status3 -->|Started| interrupted["Interrupted list: unfinished workload waits"]
+    status3 -->|Deferred| deferred["Deferred list until its return date"]
+    cancelled --> wait["Keep it out of automatic scheduling until a user returns it"]
+    interrupted --> wait
+    deferred --> returncheck{"Has its return date arrived?"}
+    returncheck -->|No| deferred
 
     subgraph order["Step 3: Put ready jobs in a clear order"]
         direction LR
-        order1["Safety and mandatory work first"] --> order2["Then overdue or repeatedly deferred work"] --> order3["Then maintenance, stated priority, time left and delay cost"] --> order4["Use readiness, plan changes and job ID only to break later ties"]
+        order1["Deferred work whose return date has arrived"] --> order2["Then lower contract_priority number"] --> order3["Then lower activity_priority number"] --> order4["If still tied, sort by activity_id"]
     end
 
-    holdcheck -->|No| order1
+    statuscheck -->|No| order1
+    returncheck -->|Yes| order1
+    wait --> userreturn{"Did a user return the activity to planning?"}
+    userreturn -->|No| wait
+    userreturn -->|Yes| order1
 
     choose{"Are we making a new plan or fixing a changed plan?"}
     order4 --> choose
 
     subgraph makeplan["Step 4A: Make a new plan"]
         direction LR
-        make1["Take the ready jobs in order"] --> make2["Try a legal week, access night and location"] --> make3["Keep trying until all required work is placed"]
+        make1["Take the next ready activity"] --> make2["Try a week allowed by every PS1 rule"] --> make3["Assign its access night, location and sharing group"] --> make4["Continue until every full workload is placed"]
     end
 
     subgraph changeplan["Step 4B: Fix a changed plan"]
         direction LR
-        change1["Keep active and unaffected work fixed"] --> change2["Reconsider only the changed job and work that depends on it"] --> change3["Try legal weeks closest to the old plan"]
+        change1["Keep active and unaffected work fixed"] --> change2["Reconsider only the changed activity and dependent activities"] --> change3["Try allowed weeks closest to the old plan"]
     end
 
     choose -->|New plan| make1
     choose -->|Changed plan| change1
-    make3 --> check1
+    make4 --> check1
     change3 --> check1
 
     subgraph check["Step 5: Check the plan with separate code"]
@@ -125,7 +132,7 @@ graph TB
 
     subgraph explain["Step 6: Explain the checked plan"]
         direction LR
-        explain1["Show the assigned work"] --> explain2["Show every move, delay, warning and cost change"] --> explain3["Say that the separate checker proved feasibility"]
+        explain1["Show the assigned work"] --> explain2["Show every move, delay, warning and score change"] --> explain3["Show local validator result: zero hard-rule failures"]
     end
 
     pass -->|Yes| explain1
@@ -142,7 +149,7 @@ graph TB
 
     subgraph publish["Step 8: Publish and protect the approved plan"]
         direction LR
-        publish1["Give the plan a version number"] --> publish2["Save who approved it and when"] --> publish3["Lock active and approved work"]
+        publish1["Create an internal version number for machine reference"] --> publish2["Show approval date, time and approver in the saved document"] --> publish3["Lock active and approved work"]
     end
 
     approved -->|Yes| publish1
@@ -155,12 +162,7 @@ graph TB
     publish3 --> run1
     run3 --> outcome{"What happened?"}
     outcome -->|Completed| done["Record completion and close the audit trail"]
-    outcome -->|Cancelled before start| cancel["Record the cause and return the full workload"]
-    outcome -->|Interrupted| interrupt["Record completed work and return all unfinished work"]
-    outcome -->|Deferred| defer["Record the reason, owner, new date and deferment count"]
-    cancel --> receive1
-    interrupt --> receive1
-    defer --> receive1
+    outcome -->|Cannot continue| status1
 
     publish3 --> changed{"Did an important input change?"}
     changed -->|Yes| change1
@@ -170,65 +172,97 @@ graph TB
     classDef process fill:#e5dbff,stroke:#5f3dc4,color:#3b2f72
     classDef action fill:#ffe8cc,stroke:#d9480f,color:#7c2d12
     classDef output fill:#c5f6fa,stroke:#0c8599,color:#155e75
-    class start,receive1,receive2,receive3,understand1,understand2,understand3 input
-    class complete,holdcheck,choose,pass,retry,approved,outcome,changed decision
-    class order1,order2,order3,order4,make1,make2,make3,change1,change2,change3,check1,check2,check3 process
-    class missing1,missing2,blocked1,blocked2,blocked3,wait,repair1,failed1,failed2,failed3,cancel,interrupt,defer action
+    class start,receive1,receive2,receive3,status1,status2 input
+    class complete,statuscheck,status3,returncheck,userreturn,choose,pass,retry,approved,outcome,changed decision
+    class order1,order2,order3,order4,make1,make2,make3,make4,change1,change2,change3,check1,check2,check3 process
+    class missing1,missing2,cancelled,interrupted,deferred,wait,repair1,failed1,failed2,failed3 action
     class explain1,explain2,explain3,review1,review2,publish1,publish2,publish3,run1,run2,run3,done output
 ```
 
 ### What the main terms mean
 
-**Ordered list of ready jobs**
+**What the Step 3 rectangles mean**
 
-This replaces the phrase `ranked candidate set`. A candidate is simply a job
-that has enough information and is allowed to enter planning. The system puts
-those jobs in an order so the scheduler knows which one to try first.
+Each rectangle is an ordering step, not a yes-or-no decision. The system compares
+two ready activities using one rectangle at a time:
 
-The desired operations order compares one rule at a time. The first rule that
-separates two jobs decides which comes first:
+1. A deferred activity whose return date has arrived enters the ready list.
+2. Lower `contract_priority` number comes first, so priority 1 beats 2 and 3.
+3. If the contract priority ties, lower `activity_priority` number comes first.
+4. If both priorities tie, sort by `activity_id`. This final rectangle gives the
+   same order every time and has no business meaning beyond breaking a tie.
 
-1. urgent safety or mandatory work;
-2. work at its deferment limit or recurrence deadline;
-3. maintenance before project work by default;
-4. the supplied contract and activity priority;
-5. the job with less usable time left after considering its workload and the
-   access nights still available;
-6. the job that would create the larger delay penalty;
-7. the job that is ready when a scarce access opportunity exists;
-8. during a replan, the option that changes less approved work;
-9. the stable activity ID, so a true tie always has the same answer.
-
-This ordering only tells the scheduler what to try first. It never makes an
-unsafe placement legal. It is a design recommendation for the wider operations
-workflow. The current PS1 solver uses its existing constraint-tightness order
-and the published scenario score, so this policy must not be presented as
-already implemented.
+This is the requested product ordering. The current solver still uses its
+existing constraint-tightness order, so do not present this Step 3 sequence as
+implemented until the solver is changed and retested.
 
 **Automatic allocation**
 
-This replaces the phrase `deterministic allocate`. Fixed code tries to assign
-each job a legal week, access night, location, possession group and ECLO choice.
+Fixed code tries to assign each activity an allowed week, access night,
+location, possession group and ECLO choice.
 It checks the published rules while building the plan. With the same inputs and
 settings, it is designed to give the same answer. AI does not choose whether a
 placement is legal. A separate validator checks the completed plan before it
 can move to human review or CSV release.
 
+**Week allowed by every PS1 rule**
+
+This replaces the phrase `legal week`. A week is allowed only when the proposed
+placement passes all applicable official rules:
+
+1. the full workload is still scheduled;
+2. the activity does not start before `planned_start_date`;
+3. its predecessor finishes in a strictly earlier week;
+4. location closures, buffers, and Live opposite-bound or interchange closures
+   do not conflict;
+5. each possession uses an allowed `PM`, `PC`, and `C` mix;
+6. only activities in the same location, week, and `co_share_group` share one
+   possession;
+7. the contract and activity type stay within the weekly access-night cap;
+8. the contract and activity type stay within the `number_of_workfronts` cap on
+   each access night;
+9. the location stays within the scenario's supply rule;
+10. ECLO obeys the scenario rule, including Scenario C's two-week continuous
+    window per line.
+
+Scenario A forbids ECLO and excess supply. Scenario B forbids finishing after
+the planned completion date. Scenario C permits only its published limited
+supply flexibility. The official brief describes non-overlapping buffers as a
+hard rule, but the supplied zero-violation sample conflicts with the literal
+geometry. The app still reports those disputed non-Live overlaps as warnings
+and keeps Live mirror conflicts hard until the official validator or organiser
+settles the meaning.
+
 **Change-as-little-as-possible replan**
 
 This replaces the phrase `minimal-churn replan`. When one job is blocked or
 delayed, the current replan code keeps every unaffected job fixed. It only
-reconsiders that job and jobs that depend on it, then tries legal weeks closest
+reconsiders that job and jobs that depend on it, then tries allowed weeks closest
 to their old weeks. This is a narrow recovery method, not proof that it found
 the mathematically smallest possible number of changes.
 
-**Useful blocked result**
+**Not scheduled now**
 
-A blocked result should contain three things: the exact reason, the first known
-time the reason may clear, and the smallest safe action that could clear it.
-Examples include waiting for a predecessor, moving to the first week with a
-free workfront slot, or changing an explicit lock. If the data does not say when
-the condition clears, the result must say `recovery unknown`.
+This replaces the phrase `hold it outside planning`. The selected activity is
+kept in a separate Cancelled, Interrupted, or Deferred list and is excluded from
+automatic placement. The saved row includes the user-entered reason, the prior
+plan version, and any defer-until date. It returns only when a user chooses
+`Return to planning`, or when a deferred return date arrives and a user confirms
+the return.
+
+**What the local validator result means**
+
+`Zero hard-rule failures` means our independent checker found no breach of the
+rules it implements for that candidate schedule. It is stronger than an AI
+explanation because it comes from separate code. It is not proof that the
+schedule will pass the organisers' unavailable hidden reference validator.
+
+**Plan record and version number**
+
+The system stores an internal version number so code, logs, approvals, and later
+replans can refer to one exact plan. The saved human-facing document shows the
+approval date, approval time, and approver name. The machine reference and the
+human audit details serve different purposes and both point to the same plan.
 
 ## Data model: separate identity, state and urgency
 
@@ -236,14 +270,13 @@ Do not overload one `category` field. Keep these dimensions separate:
 
 | Dimension | Representative values | Purpose |
 | --- | --- | --- |
-| Work class | maintenance, project | Applies the consultation's default maintenance-over-project policy. |
-| Maintenance type | corrective, preventive, renewal, inspection | Describes the work itself. |
-| Trigger | planned cycle, observed defect, condition alert, carry-over, project milestone | Preserves why the request exists. |
-| Lifecycle state | draft, proposed, approved, ready, active-locked, complete, cancelled, deferred, stale | Prevents status from becoming a fake priority category. |
-| Safety band | critical, safety-related, service-impacting, routine | First policy discriminator; requires evidence and provenance. |
-| Time obligation | earliest start, latest completion, recurrence due, contract date | Supports slack rather than raw end-date sorting. |
-| Deferment | count, reason, risk owner, latest return date, limit | Makes escalation auditable. |
-| Readiness | explicit operator hold, approval or equipment state, only when supplied | Keeps known unavailable work outside planning without inventing missing data. |
+| Activity type from file | Renewal, Construction | Uses the exact `activity_type` value without inferring maintenance or project. |
+| Possession role from file | PM, PC, C | Uses `access_type` to apply the legal possession mix. |
+| Nature from file | Live, Non-live Consist, Non-live Others | Determines buffer and closure behaviour. |
+| User-managed state | ready, cancelled, interrupted, deferred, active, complete | Controls whether an activity is available for automatic scheduling. |
+| User status details | reason, selected status, defer-until date | Explains why work left the ready list and when it may return. |
+| Timing from file | planned start, planned completion, contract completion | Applies official start, scenario and scoring rules without asking the user to enter a new due cause. |
+| Priority from file | contract priority, activity priority | Orders ready work using the supplied priority numbers. |
 | PS1 team capacity | `number_of_workfronts` | Hard limit on concurrent activities for the same contract and activity type on one access night. |
 | Change control | plan version, locked flag, source event, approval state | Supports safe replanning and audit. |
 
@@ -261,19 +294,24 @@ check the workfront cap, but it cannot check whether a particular person or
 specialist crew is free. A future operational version may accept that data, but
 the current product must label it as an extra input rather than a PS1 rule.
 
-**Blocked reasons**
+**Dates are inputs, not user-entered causes**
 
-Every blocked item must name the actual missing condition, for example an
-unfinished predecessor, no legal workfront slot, an explicit operator hold, or
-a locked assignment that cannot move. It should also state the first known
-recovery time and smallest safe recovery action. If either is not supported by
-the data, state that it is unknown.
+The user only enters the reason an activity cannot proceed. The application
+already reads `planned_start_date`, `planned_completion_date`, and
+`contract_completion_date` from the CSV files. Those dates remain necessary
+because the official scenarios and score use them, but they are not cancellation
+or interruption reasons.
 
 ## State-transition rules
 
 - `complete`: terminal, with actual completion recorded.
-- `cancelled`: retain cause and prior plan version; restore the full required workload; return to the next decision cycle unless an urgent rule triggers an immediate replan.
-- `deferred`: require reason, risk owner, defer-until/latest-return date, and deferment count; escalate when the allowed limit is reached.
+- `cancelled`: work has not started. Save the user-entered reason and prior plan
+  version. Keep the full workload in the Cancelled list until a user returns it.
+- `interrupted`: work started but could not finish. Save the reason and completed
+  work. Keep every unfinished access in the Interrupted list until a user
+  returns it.
+- `deferred`: save the reason and return date. When that date arrives, show it as
+  due for return to the ready list.
 - `active-locked`: never move automatically during recovery.
 - `stale`: an approved proposal whose decision-relevant inputs changed; it cannot be published or executed without revalidation and reapproval.
 
@@ -285,7 +323,8 @@ Do not build the full enterprise workflow before the deadline. The highest-value
 2. Mark the plan approved/versioned.
 3. Inject one operator-grounded disruption: a morning condition alert or urgent defect removes an access opportunity from tonight's plan.
 4. Preserve active/locked and unaffected work, replan only the impacted chain, and validate again.
-5. Show exactly what moved, what was deferred, why the policy ranked it that way, the cost/churn change, and whether human approval is still needed.
+5. Show exactly what moved, what was deferred, the published score change, the
+   local validator result, and whether human approval is still needed.
 6. Refuse CSV release if the independent validator fails.
 7. Present the AI risk mitigation explicitly: AI parses/explains; deterministic code checks; a human approves the version.
 
