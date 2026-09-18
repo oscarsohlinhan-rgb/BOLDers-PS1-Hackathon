@@ -3,7 +3,7 @@
 Reads ONLY plain schedule dicts + the input instance; never trusts solver
 state. Returns structured violations; empty list == feasible.
 
-Tags: workload, horizon, access_night, eclo_flag, occupancy_group, start,
+Tags: duration, workload, horizon, access_night, eclo_flag, occupancy_group, start,
   precedence, closure, buffer, mirror, mix, alloc, workfront, multi_access,
   capacity, eclo, eclo_window, planned_date.
 """
@@ -15,6 +15,28 @@ from .model import Instance
 
 Accesses = Dict[str, List[Tuple[int, int, int]]]
 Groups = Dict[Tuple[str, int, str], str]  # (aid, week, location) -> group
+
+
+def validate_duration_allocation(job_duration_minutes: float,
+                                 slot_duration_minutes: float) -> List[dict]:
+    """Independently validate one explicit all-in duration allocation.
+
+    The official CSV schema does not currently provide these values. When a
+    later canonical intake does, equality is feasible and the only duration
+    failure is the stated job duration exceeding the stated slot duration.
+    Separate supplied railway constraints remain the responsibility of their
+    own validator rules.
+    """
+    if job_duration_minutes <= slot_duration_minutes:
+        return []
+    return [{
+        "rule": "duration",
+        "severity": "hard",
+        "detail": (
+            f"job duration {job_duration_minutes} minutes exceeds "
+            f"slot duration {slot_duration_minutes} minutes"
+        ),
+    }]
 
 
 def _slot_sets(inst: Instance, aid: str):

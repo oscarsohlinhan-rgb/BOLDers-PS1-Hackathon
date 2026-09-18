@@ -98,6 +98,14 @@ script exits.
   violations, buffer warnings, score). Fixed seed. Never crashes on congestion:
   unplaceable work is forced and honestly reported.
 - Validator is independent (reads only plain schedule dicts + inputs).
+- A supplied job duration is all-in: setup, preparation, execution, close-out,
+  and paperwork are already included. Compare it directly with an explicit
+  slot duration; equality is feasible, and no generic padding is added or
+  deducted. The current official eight CSVs contain no per-job minute field,
+  so this guard applies only when later canonical intake explicitly supplies
+  both values. AI has no authority to reinterpret it. Cross-possession buffer
+  semantics remain a separate spatial rule and never reduce an individual
+  job's stated slot time.
 - Evidence rule from the official sample (feasible, 0 violations): mix limits
   apply **per possession** (location, week, co-share group). Capacity counts distinct
   possession groups vs `LOCATION_SUPPLY` (A: zero tolerance, C: +1 soft,

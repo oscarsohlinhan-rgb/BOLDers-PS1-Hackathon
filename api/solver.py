@@ -20,6 +20,21 @@ Accesses = Dict[str, List[Access]]     # aid -> accesses
 Groups = Dict[Tuple[str, int, str], str]  # (aid, week, location) -> group
 
 
+def duration_fits_slot(job_duration_minutes: float,
+                       slot_duration_minutes: float) -> bool:
+    """Return whether an all-in job duration fits an explicit time slot.
+
+    PS1 durations already include setup, preparation, execution, close-out and
+    paperwork. Compare the supplied values directly: equality is feasible and
+    no generic padding is added to the job or subtracted from the slot.
+
+    The current official eight-file schema has no per-job duration or slot-time
+    field. This guard is for any later canonical intake that explicitly supplies
+    both values; AI must not reinterpret the comparison.
+    """
+    return job_duration_minutes <= slot_duration_minutes
+
+
 class SlotInfo:
     __slots__ = ("aid", "week", "foot", "buf", "mir", "group", "atype",
                  "nat")

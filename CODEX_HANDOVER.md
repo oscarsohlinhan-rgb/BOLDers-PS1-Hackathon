@@ -49,6 +49,13 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
   ECLO-in-A. ✓  Full stack (page 200 → rewrite → feasible) tested locally. ✓
 
 ## Evidence rules and hidden-validator risk
+- Job duration is all-in: it already includes setup, preparation, execution,
+  close-out and paperwork. Compare it directly to any explicitly supplied slot
+  duration; equality is feasible and no generic padding may be added or
+  deducted. The current eight-file public schema contains no minute-duration
+  fields, so this is a guarded boundary for later canonical intake. AI cannot
+  reinterpret or override it. The cross-possession buffer question is separate
+  and does not reduce the available time of an individual job slot.
 - Mix limits apply PER POSSESSION (location, week, co-share group), not per
   location-week. Capacity counts distinct groups vs LOCATION_SUPPLY
   (A: zero tolerance, C: +1 soft, B: soft only).

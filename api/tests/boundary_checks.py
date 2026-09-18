@@ -113,6 +113,29 @@ def run(check):
     base_bundle = _bundle()
     base = load_instance(DATA)
 
+    # A stated job duration is the complete occupation time. Exact equality is
+    # feasible; neither solver nor independent validator may add generic setup,
+    # paperwork, safety or planning padding, or shrink the stated slot.
+    check("boundary-duration-solver-120-equals-120",
+          S.duration_fits_slot(120, 120),
+          "solver rejected an exact 120-minute allocation")
+    check("boundary-duration-solver-four-hours-equals-four-hours",
+          S.duration_fits_slot(240, 240),
+          "solver rejected an exact four-hour allocation")
+    check("boundary-duration-solver-one-minute-over-rejected",
+          not S.duration_fits_slot(121, 120),
+          "solver accepted a duration longer than its slot")
+    check("boundary-duration-validator-120-equals-120",
+          not V.validate_duration_allocation(120, 120),
+          "validator rejected an exact 120-minute allocation")
+    check("boundary-duration-validator-four-hours-equals-four-hours",
+          not V.validate_duration_allocation(240, 240),
+          "validator rejected an exact four-hour allocation")
+    duration_over = V.validate_duration_allocation(121, 120)
+    check("boundary-duration-validator-one-minute-over-rejected",
+          "duration" in _rules(duration_over),
+          "validator accepted a duration longer than its slot")
+
     numeric_boundaries = [
         ("08_ACTIVITY_DETAILS.csv", "total_accesses", 0),
         ("08_ACTIVITY_DETAILS.csv", "activity_priority", 4),
