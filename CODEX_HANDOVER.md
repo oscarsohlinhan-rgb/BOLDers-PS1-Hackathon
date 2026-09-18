@@ -6,6 +6,11 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
 @ `966c976`. This folder (`ps1-app/`) is our solver + validator + web app.
 
 ## State: math core + deterministic pipeline/replan DONE and verified
+- Google Cloud deployment is live from commit `84eb860`: judge URL
+  `https://ps1-web-243124675970.asia-southeast1.run.app`, API URL
+  `https://ps1-api-243124675970.asia-southeast1.run.app`. Public health,
+  multipart validate, Scenario A solve, 8/8 sample loading, and the rendered
+  feasible result/download UI were smoke-tested successfully on 19 Sep 2026.
 - `api/model.py` — parses 8 CSVs, week math, expansion (tunnel+platform walk),
   buffers, Live mirrors, predecessor DAG. Single shared primitive so solver,
   validator, exporter can never disagree on expansion.
@@ -69,26 +74,23 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
   overrun per contract. Activity nudge applies per overrunning activity.
 
 ## Left to do
-1. Deploy on Google Cloud. The official NebulaX Telegram channel said a Google
-   Cloud-hosted submission is required for judging. The signed-in lab is
-   available in Chrome. Railway remains a tested fallback only.
-2. Winning demo: use the 18 Sep SMRT operator consultation as the narrative.
+1. Winning demo: use the 18 Sep SMRT operator consultation as the narrative.
    Show a validated base plan, then inject a morning condition alert/urgent
    defect that removes an access opportunity, preserve locked/unaffected work,
    show exact moves and trade-offs, revalidate, and require human approval.
    Do not build the handwritten category queue literally; the challenged,
    operator-grounded design is in `docs/PRIORITY_AND_REPLAN_PIPELINE.md`.
-3. Submission: private collaboration remote is
+2. Submission: private collaboration remote is
    `https://github.com/oscarsohlinhan-rgb/BOLDers-PS1-Hackathon`; prepare the
    final public/submission URL, hosted URL, 2–3-min video, write-up, and ZIP of
    9 CSVs (3 scenarios × 3 files). PS1 permits five uploads per scenario and
    the latest upload is final, so gate each upload as a release. Pack says
    GitHub, PS1 README says GitLab; bring both URLs if organisers do not clarify.
-4. Open organiser questions: official validator + `trackaccess` helper absent;
+3. Open organiser questions: official validator + `trackaccess` helper absent;
    buffer semantics pending confirmation (ours documented in README).
-5. Product work still pending: mixed-file AI intake adapter, interrupted-work
-   persistence, user-confirmation workflow, Settings UI for an ephemeral AI
-   key, and the Google Cloud deployment.
+4. Product work still pending: mixed-file AI intake adapter, interrupted-work
+   persistence, user-confirmation workflow, and Settings UI for an ephemeral AI
+   key.
 
 ## Gotchas
 - Python 3.9 (stdlib-only core + fastapi/uvicorn). Local Next 14.2.35 in

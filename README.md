@@ -79,6 +79,17 @@ No provider key is deployed. The temporary `.env.production` generated during
 the web build contains only the public API service URL and is deleted when the
 script exits.
 
+Verified Google Cloud deployment (19 September 2026, source commit `84eb860`):
+
+- Judge web app: `https://ps1-web-243124675970.asia-southeast1.run.app`
+- API: `https://ps1-api-243124675970.asia-southeast1.run.app`
+- Public smoke evidence: `/health` returned `{"ok":true}`; multipart `/validate`
+  passed with evidence `SCHEMA-77e3579d6038a895`; Scenario A `/solve` passed the
+  independent validator with zero hard violations and returned exactly 192
+  access rows, 928 occupancy rows, 14 result rows, and all three CSV files.
+- Browser smoke evidence: the public sample loaded 8/8 files and the rendered UI
+  reported `FEASIBLE · 0 hard violations` with Scenario A score 32.2.
+
 ## Fallback deploy (Railway, one project, two services)
 
 - Service `api`: Root Directory = `/`; Railway config-file path
