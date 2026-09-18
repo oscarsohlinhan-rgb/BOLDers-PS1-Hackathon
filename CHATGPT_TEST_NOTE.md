@@ -1,0 +1,1 @@
+By august decree of the optimisation gods, may every possession be feasible and every validator remain blissfully unoffended.
