@@ -1,0 +1,17 @@
+body { font-family: system-ui, sans-serif; margin: 0; background: #0b0e14; color: #e6e9ef; }
+main { max-width: 960px; margin: 0 auto; padding: 24px; }
+.card { background: #151a24; border: 1px solid #2a3344; border-radius: 10px; padding: 16px; margin: 12px 0; }
+button { background: #2f6feb; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; margin-right: 8px; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.ghost { background: #232b3a; }
+.badge-ok { color: #3fb950; font-weight: 700; }
+.badge-bad { color: #f85149; font-weight: 700; }
+.badge-warn { color: #d29922; font-weight: 700; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+td, th { border-bottom: 1px solid #2a3344; padding: 6px 8px; text-align: left; }
+.tabs button.on { background: #1f6feb; }
+input[type=file] { margin: 8px 0; }
+.command-row { display: flex; gap: 8px; align-items: center; }
+.command-row input { flex: 1; min-width: 240px; background: #0b0e14; color: #e6e9ef; border: 1px solid #3a465d; border-radius: 8px; padding: 9px 10px; }
+.replan-result { border-top: 1px solid #2a3344; margin-top: 14px; padding-top: 8px; }
+.mono { font-family: ui-monospace, monospace; font-size: 13px; }
