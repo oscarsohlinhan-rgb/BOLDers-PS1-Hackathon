@@ -17,6 +17,12 @@ Private team collaboration repository:
   repair. Unaffected activities remain locked; only the independent validator
   can release replanned CSVs. The explainer is templated and never establishes
   feasibility.
+- `api/pipeline.py` — deterministic eight-file schema gate, stable evidence
+  IDs, solver orchestration, independent-validator release gate, and exact CSV
+  release only for feasible candidates.
+- `api/ai_explainer.py` — optional DeepSeek explanation of already-checked
+  structured evidence. It has no scheduling, validation, approval, state-change,
+  or export authority and degrades to deterministic text when AI is unavailable.
 - `docs/PRIORITY_AND_REPLAN_PIPELINE.md` — operator-grounded redesign of the
   initial event-sorting sketch. It separates work type, lifecycle state,
   dynamic risk, deterministic feasibility, EWR judgment, and execution/replan.
@@ -30,7 +36,25 @@ cd web && npm install && npm run dev      # opens on :3000, /api -> :8000
 python3 -m api.tests.run_checks           # regression + mutation tests
 ```
 
-## Deploy (Railway, one project, two services)
+Optional AI configuration stays in the future Settings-page browser session.
+Never commit a real key. `POST /ai/explain` accepts it only through an ephemeral
+`X-DeepSeek-API-Key` header and does not persist or return it. The public API
+does not read a server-wide DeepSeek key, which prevents unauthenticated users
+from spending shared provider credit.
+
+## Judging deployment
+
+The official NebulaX Telegram channel stated on 18 September that submissions
+must be available on Google Cloud to be considered for judging. Google Cloud is
+therefore the primary deployment target. The existing Railway files are a
+tested fallback only and are not sufficient as the judging deployment.
+
+The same channel stated that PS1 permits five validator uploads per scenario
+and the most recent upload, not the highest score, becomes final. Treat every
+upload as a release: run the independent validator, archive the exact input and
+output evidence IDs, and require explicit team approval first.
+
+## Fallback deploy (Railway, one project, two services)
 
 - Service `api`: Root Directory = `/`; Railway config-file path
   `/api/railway.toml`; private (no public domain). `.python-version` pins 3.9.
@@ -70,4 +94,6 @@ Scenario A/B/C all feasible on the public pack, 0 hard violations
 P6 stretch is implemented as a narrow deterministic command box (`block … in
 week …` / `delay … by … weeks`), minimal-churn dependency repair, templated
 before/after explanation and validator-gated export. There is no generative AI
-in the feasibility or CSV path.
+in the feasibility or CSV path. The backend now includes a deterministic schema
+gate and an optional DeepSeek evidence explainer; the mixed-format adapter,
+roadblock persistence, Settings UI, and Google Cloud deployment remain pending.

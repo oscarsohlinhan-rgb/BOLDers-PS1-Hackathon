@@ -147,6 +147,167 @@ def main():
           not blocked_result["validator_gate"]["passed"] and
           bool(blocked_result["validator_gate"]["hard_violations"]))
 
+    # === pipeline.validate_csv_bundle TDD (RED) ===========================
+    # api.pipeline does not exist yet — import must raise ModuleNotFoundError.
+    try:
+        from api.pipeline import validate_csv_bundle
+        pipeline_imported = True
+    except (ImportError, ModuleNotFoundError):
+        pipeline_imported = False
+
+    if pipeline_imported:
+        CANONICAL_FILES = [
+            "01_LINES.csv", "02_STATIONS.csv", "03_SECTORS.csv",
+            "04_LOCATION_SUPPLY.csv", "05_BUFFER_LOCATION.csv",
+            "06_PARAMETERS.csv", "07_PROJECT_DETAILS.csv",
+            "08_ACTIVITY_DETAILS.csv",
+        ]
+        BUNDLE_DIR = DATA
+
+        def _build_bundle():
+            bundle = {}
+            for fname in CANONICAL_FILES:
+                path = os.path.join(BUNDLE_DIR, fname)
+                with open(path, encoding="utf-8-sig") as f:
+                    bundle[fname] = f.read()
+            return bundle
+
+        def _mutated_csv(bundle, fname, mutate_fn):
+            """Return a new bundle with one CSV content mutated."""
+            b = dict(bundle)
+            b[fname] = mutate_fn(b[fname])
+            return b
+
+        def _error_codes(result):
+            return [e["code"] for e in result["errors"]]
+
+        bundle = _build_bundle()
+
+        # --- valid bundle passes ------------------------------------------
+        r = validate_csv_bundle(bundle)
+        check("pipe-valid-bundle-passes", r["passed"],
+              str(r["errors"][:3]))
+
+        # --- evidence_id stable for identical input ----------------------
+        r2 = validate_csv_bundle(bundle)
+        check("pipe-evidence-id-stable",
+              r["evidence_id"] == r2["evidence_id"],
+              f"{r['evidence_id']} != {r2['evidence_id']}")
+
+        # --- evidence_id changes for mutated input -----------------------
+        mut_del_file = dict(bundle)
+        del mut_del_file["05_BUFFER_LOCATION.csv"]
+        r3 = validate_csv_bundle(mut_del_file)
+        check("pipe-evidence-id-mutated",
+              r["evidence_id"] != r3["evidence_id"],
+              "same evidence after file deletion")
+
+        # --- each mutation is independent --------------------------------
+        # Missing required file
+        for fname in CANONICAL_FILES:
+            b = dict(bundle)
+            del b[fname]
+            res = validate_csv_bundle(b)
+            check(f"pipe-missing-file-{fname}",
+                  not res["passed"] and "missing_required_file" in _error_codes(res),
+                  str(_error_codes(res)))
+
+        # Missing required column (08_ACTIVITY_DETAILS missing activity_id)
+        def _drop_col_08(csv_text):
+            lines = csv_text.strip().splitlines()
+            header = lines[0].split(",")
+            header.remove("activity_id")
+            return ",".join(header) + "\n" + "\n".join(lines[1:])
+        b = _mutated_csv(bundle, "08_ACTIVITY_DETAILS.csv", _drop_col_08)
+        res = validate_csv_bundle(b)
+        check("pipe-missing-column-activity_id",
+              not res["passed"] and "missing_required_column" in _error_codes(res),
+              str(_error_codes(res)))
+
+        # Invalid activity_type (08 row 1: change "Renewal" to "Bogus")
+        def _bad_activity_type(csv_text):
+            return csv_text.replace(",Renewal,", ",Bogus,", 1)
+        b = _mutated_csv(bundle, "08_ACTIVITY_DETAILS.csv", _bad_activity_type)
+        res = validate_csv_bundle(b)
+        check("pipe-invalid-activity_type",
+              not res["passed"] and "invalid_activity_type" in _error_codes(res),
+              str(_error_codes(res)))
+
+        # Invalid integer (08 total_accesses = "abc")
+        def _bad_int_08(csv_text):
+            lines = csv_text.strip().splitlines()
+            header = lines[0].split(",")
+            idx = header.index("total_accesses")
+            row = lines[1].split(",")
+            row[idx] = "abc"
+            return ",".join(header) + "\n" + ",".join(row) + "\n" + \
+                "\n".join(lines[2:])
+        b = _mutated_csv(bundle, "08_ACTIVITY_DETAILS.csv", _bad_int_08)
+        res = validate_csv_bundle(b)
+        check("pipe-invalid-integer",
+              not res["passed"] and "invalid_integer" in _error_codes(res),
+              str(_error_codes(res)))
+
+        # Malformed date (08 planned_start_date = "not-a-date")
+        def _bad_date_08(csv_text):
+            lines = csv_text.strip().splitlines()
+            header = lines[0].split(",")
+            idx = header.index("planned_start_date")
+            row = lines[1].split(",")
+            row[idx] = "not-a-date"
+            return ",".join(header) + "\n" + ",".join(row) + "\n" + \
+                "\n".join(lines[2:])
+        b = _mutated_csv(bundle, "08_ACTIVITY_DETAILS.csv", _bad_date_08)
+        res = validate_csv_bundle(b)
+        check("pipe-malformed-date",
+              not res["passed"] and "malformed_date" in _error_codes(res),
+              str(_error_codes(res)))
+
+        # Unknown contract foreign key (08 contract_number = "C999")
+        def _bad_fk_08(csv_text):
+            return csv_text.replace(",C001,", ",C999,", 1)
+        b = _mutated_csv(bundle, "08_ACTIVITY_DETAILS.csv", _bad_fk_08)
+        res = validate_csv_bundle(b)
+        check("pipe-unknown-contract_fk",
+              not res["passed"] and "unknown_contract_fk" in _error_codes(res),
+              str(_error_codes(res)))
+
+        # Predecessor cycle (A003 -> A004 -> A003)
+        def _pred_cycle(csv_text):
+            lines = csv_text.strip().splitlines()
+            header = lines[0].split(",")
+            pred_idx = header.index("predecessor_activity_id")
+            aid_idx = header.index("activity_id")
+            out = [lines[0]]
+            for line in lines[1:]:
+                row = line.split(",")
+                if row[aid_idx] == "A003":
+                    row[pred_idx] = "A004"
+                out.append(",".join(row))
+            return "\n".join(out) + "\n"
+        b = _mutated_csv(bundle, "08_ACTIVITY_DETAILS.csv", _pred_cycle)
+        res = validate_csv_bundle(b)
+        check("pipe-predecessor-cycle",
+              not res["passed"] and "predecessor_cycle" in _error_codes(res),
+              str(_error_codes(res)))
+
+        # Duplicate activity_id
+        def _dup_aid(csv_text):
+            lines = csv_text.strip().splitlines()
+            return lines[0] + "\n" + lines[1] + "\n" + lines[1] + "\n" + \
+                "\n".join(lines[2:])
+        b = _mutated_csv(bundle, "08_ACTIVITY_DETAILS.csv", _dup_aid)
+        res = validate_csv_bundle(b)
+        check("pipe-duplicate-activity_id",
+              not res["passed"] and "duplicate_activity_id" in _error_codes(res),
+              str(_error_codes(res)))
+    else:
+        check("pipe-import-fails-as-expected", False,
+              "(api.pipeline not yet implemented — RED phase)")
+
+    from api.tests.pipeline_checks import run as run_pipeline_checks
+    run_pipeline_checks(check)
+
     print("FAILURES:", fails if fails else "none")
     sys.exit(1 if fails else 0)
 

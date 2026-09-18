@@ -5,7 +5,7 @@ NEBULA X 2026 hackathon, Track 1 / PS1 railway track-access optimisation.
 Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
 @ `966c976`. This folder (`ps1-app/`) is our solver + validator + web app.
 
-## State: math core + P6 deterministic replan DONE and verified, no generative AI
+## State: math core + deterministic pipeline/replan DONE and verified
 - `api/model.py` — parses 8 CSVs, week math, expansion (tunnel+platform walk),
   buffers, Live mirrors, predecessor DAG. Single shared primitive so solver,
   validator, exporter can never disagree on expansion.
@@ -18,9 +18,16 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
   `validate()` = hard violations, `warnings()` = soft buffer notes.
 - `api/exporter.py` — exact 3-CSV outputs, RESULTS dates
   (last day of last access week — verified vs sample), §2.5 scores.
-- `api/main.py` — FastAPI: `GET /health`, `POST /solve`
+- `api/main.py` — FastAPI: `GET /health`, `POST /validate`, `POST /solve`
   (8 files + scenario + time_budget), `POST /replan` (same files + one narrow
-  disruption command). Run from repo root: `python3 -m uvicorn api.main:app`.
+  disruption command), and `POST /ai/explain` (structured evidence only).
+  Run from repo root: `python3 -m uvicorn api.main:app`.
+- `api/pipeline.py` — deterministic schema and relationship checks, stable
+  evidence IDs, solve orchestration, independent-validator release gate, and
+  no CSV output when the candidate is invalid.
+- `api/ai_explainer.py` — optional DeepSeek explanation over already-checked
+  evidence. AI has no scheduling, feasibility, approval, state-change, or CSV
+  release authority. Missing key or provider failure uses deterministic text.
 - `api/replanner.py` — accepts only `block A001 in week 12` or
   `delay A001 by 2 weeks`; keeps unaffected activities locked, cascades through
   successors, templates the before/after explanation, and releases CSVs only
@@ -28,7 +35,9 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
 - `web/` — Next.js 14 UI (upload 8, A/B/C tabs, solve, badge/scores,
   violations, CSV downloads, sample-dataset loader). `/api/*` rewrites to
   backend via `API_INTERNAL_URL`. tsc + `next build` clean.
-- `api/tests/run_checks.py` — `python3 -m api.tests.run_checks`: ALL PASS.
+- `api/tests/run_checks.py` — `python3 -m api.tests.run_checks`: ALL PASS,
+  including malformed input, missing schema/parameters, broken foreign keys,
+  predecessor cycle, impossible workload, and AI-boundary mutations.
 
 ## Verified numbers (public pack)
 - Sample regression: 192/928/14 rows, 0 violations, overruns 14/7/7. ✓
@@ -51,11 +60,9 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
   overrun per contract. Activity nudge applies per overrunning activity.
 
 ## Left to do
-1. Deploy: Railway, one project two services (`api/railway.toml`,
-   `web/railway.toml` in repo). api private, web public, `API_INTERNAL_URL`
-   to `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`; do not hard-code
-   port 8000. Set each service's Railway config-file/root path explicitly and
-   warm before demo.
+1. Deploy on Google Cloud. The official NebulaX Telegram channel said a Google
+   Cloud-hosted submission is required for judging. The signed-in lab is
+   available in Chrome. Railway remains a tested fallback only.
 2. Winning demo: use the 18 Sep SMRT operator consultation as the narrative.
    Show a validated base plan, then inject a morning condition alert/urgent
    defect that removes an access opportunity, preserve locked/unaffected work,
@@ -65,10 +72,14 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
 3. Submission: private collaboration remote is
    `https://github.com/oscarsohlinhan-rgb/BOLDers-PS1-Hackathon`; prepare the
    final public/submission URL, hosted URL, 2–3-min video, write-up, and ZIP of
-   9 CSVs (3 scenarios × 3 files). Pack says GitHub, PS1 README says GitLab —
-   bring both URLs if the organisers do not clarify the conflict.
+   9 CSVs (3 scenarios × 3 files). PS1 permits five uploads per scenario and
+   the latest upload is final, so gate each upload as a release. Pack says
+   GitHub, PS1 README says GitLab; bring both URLs if organisers do not clarify.
 4. Open organiser questions: official validator + `trackaccess` helper absent;
    buffer semantics pending confirmation (ours documented in README).
+5. Product work still pending: mixed-file AI intake adapter, interrupted-work
+   persistence, user-confirmation workflow, Settings UI for an ephemeral AI
+   key, and the Google Cloud deployment.
 
 ## Gotchas
 - Python 3.9 (stdlib-only core + fastapi/uvicorn). Local Next 14.2.35 in
@@ -76,3 +87,6 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
   bare `npx next` (fetches Next 16 and breaks the build).
 - `uvicorn` not on PATH: use `python3 -m uvicorn`.
 - No secrets in repo/brain. Short replies.
+- The HTTP API accepts a DeepSeek key only through the ephemeral
+  `X-DeepSeek-API-Key` header. Do not configure a shared server key on the
+  public unauthenticated endpoint, and never commit the real key.

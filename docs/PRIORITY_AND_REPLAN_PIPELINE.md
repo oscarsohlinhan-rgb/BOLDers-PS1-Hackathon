@@ -1,6 +1,9 @@
 # Priority and Replan Pipeline
 
-Status: design recommendation, not yet wired into the solver or UI.
+Status: partially implemented. The deterministic CSV schema gate,
+solver-validator-export pipeline, stable evidence IDs, and optional DeepSeek
+evidence explainer are wired into the backend. Mixed-format intake, roadblock
+persistence, and the Settings UI are not yet implemented.
 
 This document challenges the initial handwritten queue and replaces it with a
 workflow grounded in the 18 September SMRT track-access consultation. The
@@ -51,7 +54,8 @@ operator request, but it cannot declare a plan valid or publish it.
 
 ## AI harness architecture
 
-Status: design recommendation, not yet implemented.
+Status: backend foundation implemented; remaining adapter, state, and UI work is
+still a design recommendation.
 
 The deterministic railway scheduler remains the sole authority for feasibility,
 validation, publication and release. AI assists at the edges: reading mixed
