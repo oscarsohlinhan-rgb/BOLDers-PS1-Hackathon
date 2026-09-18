@@ -60,6 +60,25 @@ and the most recent upload, not the highest score, becomes final. Treat every
 upload as a release: run the independent validator, archive the exact input and
 output evidence IDs, and require explicit team approval first.
 
+### Google Cloud Run
+
+The repository includes separate, non-root containers for the FastAPI and
+Next.js services. From an authenticated Google Cloud Shell or workstation:
+
+```
+./scripts/deploy_google_cloud.sh <project-id>
+```
+
+The script enables the required Google APIs, deploys `ps1-api`, discovers its
+Cloud Run URL, then builds and deploys `ps1-web` with that URL as the internal
+rewrite target. Both services use `asia-southeast1` by default, scale to zero,
+and allow unauthenticated judging access. Override `GCP_REGION`, `API_SERVICE`,
+or `WEB_SERVICE` only when the target project requires different names.
+
+No provider key is deployed. The temporary `.env.production` generated during
+the web build contains only the public API service URL and is deleted when the
+script exits.
+
 ## Fallback deploy (Railway, one project, two services)
 
 - Service `api`: Root Directory = `/`; Railway config-file path

@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+.pytest_cache/
+.venv/
 .DS_Store
 web/node_modules/
 web/.next/
@@ -7,4 +9,3 @@ web/tsconfig.tsbuildinfo
 .env
 .env.*
 !.env.example
-web/.env.local
