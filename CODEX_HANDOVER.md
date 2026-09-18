@@ -37,7 +37,9 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
   backend via `API_INTERNAL_URL`. tsc + `next build` clean.
 - `api/tests/run_checks.py` — `python3 -m api.tests.run_checks`: ALL PASS,
   including malformed input, missing schema/parameters, broken foreign keys,
-  predecessor cycle, impossible workload, and AI-boundary mutations.
+  predecessor cycle, feasible and infeasible workload boundaries, workfront,
+  allocation, capacity, possession-mix, predecessor, planned-date, ECLO,
+  Live-mirror, buffer-warning, malformed schedule, and AI-boundary mutations.
 
 ## Verified numbers (public pack)
 - Sample regression: 192/928/14 rows, 0 violations, overruns 14/7/7. ✓

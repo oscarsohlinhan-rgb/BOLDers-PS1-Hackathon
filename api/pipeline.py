@@ -58,6 +58,19 @@ INTEGER_FIELDS: Dict[str, List[str]] = {
     "08_ACTIVITY_DETAILS.csv": ["total_accesses", "activity_priority"],
 }
 
+INTEGER_RANGES = {
+    ("02_STATIONS.csv", "seq"): (1, None),
+    ("03_SECTORS.csv", "seq"): (1, None),
+    ("04_LOCATION_SUPPLY.csv", "supply_capacity"): (0, None),
+    ("05_BUFFER_LOCATION.csv", "up_to_buffer_sectors"): (0, None),
+    ("05_BUFFER_LOCATION.csv", "opposite_bound_required"): (0, 1),
+    ("07_PROJECT_DETAILS.csv", "contract_priority"): (1, 3),
+    ("07_PROJECT_DETAILS.csv", "number_of_workfronts"): (1, None),
+    ("07_PROJECT_DETAILS.csv", "number_of_maximum_access_per_week"): (1, None),
+    ("08_ACTIVITY_DETAILS.csv", "total_accesses"): (1, None),
+    ("08_ACTIVITY_DETAILS.csv", "activity_priority"): (1, 3),
+}
+
 DATE_FIELDS: Dict[str, List[str]] = {
     "07_PROJECT_DETAILS.csv": [
         "contract_completion_date", "planned_completion_date",
@@ -200,7 +213,7 @@ def validate_csv_bundle(bundle: Dict[str, str]) -> Dict[str, Any]:
                 if val is None:
                     continue
                 try:
-                    int(val)
+                    parsed = int(val)
                 except (ValueError, TypeError):
                     errors.append({
                         "code": "invalid_integer",
@@ -208,6 +221,24 @@ def validate_csv_bundle(bundle: Dict[str, str]) -> Dict[str, Any]:
                         "row": row_num,
                         "field": field,
                         "detail": f"cannot parse '{val}' as int",
+                    })
+                    continue
+                lower, upper = INTEGER_RANGES.get(
+                    (fname, field), (None, None))
+                if ((lower is not None and parsed < lower) or
+                        (upper is not None and parsed > upper)):
+                    if lower is not None and upper is not None:
+                        allowed = f"{lower}..{upper}"
+                    elif lower is not None:
+                        allowed = f">={lower}"
+                    else:
+                        allowed = f"<={upper}"
+                    errors.append({
+                        "code": "invalid_range",
+                        "file": fname,
+                        "row": row_num,
+                        "field": field,
+                        "detail": f"'{val}' must be {allowed}",
                     })
             # date fields
             for field in date_fields:
@@ -312,11 +343,14 @@ def validate_csv_bundle(bundle: Dict[str, str]) -> Dict[str, Any]:
 
     # --- contract FK validation (08 -> 07) ---
     contracts: set = set()
+    contract_types: Dict[str, str] = {}
     if "07_PROJECT_DETAILS.csv" not in structurally_invalid:
         for row in _parse_rows(bundle["07_PROJECT_DETAILS.csv"],
                                "07_PROJECT_DETAILS.csv", errors):
             if "contract_number" in row:
                 contracts.add(row["contract_number"])
+                contract_types[row["contract_number"]] = row.get(
+                    "activity_type", "")
 
     # --- activity-level checks ---
     activities: Dict[str, Dict[str, Any]] = {}
@@ -352,6 +386,17 @@ def validate_csv_bundle(bundle: Dict[str, str]) -> Dict[str, Any]:
                             "row": row_num,
                             "field": "contract_number",
                             "detail": f"contract '{cnum}' not found in 07_PROJECT_DETAILS.csv",
+                        })
+                    elif (cnum and row.get("activity_type", "") !=
+                          contract_types.get(cnum)):
+                        errors.append({
+                            "code": "activity_type_mismatch",
+                            "file": "08_ACTIVITY_DETAILS.csv",
+                            "row": row_num,
+                            "field": "activity_type",
+                            "detail": (
+                                f"activity type '{row.get('activity_type', '')}' "
+                                f"does not match contract '{cnum}'"),
                         })
 
                 for field in ("start_location_id", "end_location_id"):

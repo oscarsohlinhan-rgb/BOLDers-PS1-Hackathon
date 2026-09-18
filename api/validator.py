@@ -3,8 +3,9 @@
 Reads ONLY plain schedule dicts + the input instance; never trusts solver
 state. Returns structured violations; empty list == feasible.
 
-Tags: workload, start, precedence, closure, buffer, mirror, mix, alloc,
-  workfront, multi_access, capacity, eclo, eclo_window, planned_date.
+Tags: workload, horizon, access_night, eclo_flag, occupancy_group, start,
+  precedence, closure, buffer, mirror, mix, alloc, workfront, multi_access,
+  capacity, eclo, eclo_window, planned_date.
 """
 from __future__ import annotations
 
@@ -51,7 +52,20 @@ def _validate_full(inst: Instance, accesses: Accesses, groups: Groups,
     last_week: Dict[str, int] = {}
     first_week: Dict[str, int] = {}
     for aid, a in acts.items():
-        weeks = sorted(w for w, _, _ in accesses.get(aid, []))
+        slots = accesses.get(aid, [])
+        weeks = sorted(w for w, _, _ in slots)
+        contract = inst.contracts[a.contract]
+        for w, night, eclo in slots:
+            if not 1 <= w <= inst.horizon_weeks:
+                add("horizon", [aid], [w],
+                    f"{aid}: week {w} outside 1..{inst.horizon_weeks}")
+            if not 1 <= night <= contract.max_access_per_week:
+                add("access_night", [aid], [w],
+                    f"{aid}: access night {night} outside 1.."
+                    f"{contract.max_access_per_week}")
+            if eclo not in (0, 1):
+                add("eclo_flag", [aid], [w],
+                    f"{aid}: ECLO flag {eclo} must be 0 or 1")
         if weeks:
             last_week[aid] = weeks[-1]
             first_week[aid] = weeks[0]
@@ -81,6 +95,12 @@ def _validate_full(inst: Instance, accesses: Accesses, groups: Groups,
             continue
         F, B, Mr, nat = _slot_sets(inst, aid)
         for (w, _n, _e) in lst:
+            missing_groups = [loc for loc in F
+                              if not groups.get((aid, w, loc))]
+            if missing_groups:
+                add("occupancy_group", [aid], [w],
+                    f"{aid}: missing co-share group for "
+                    f"{sorted(missing_groups)[:3]}")
             gmap = {loc: groups.get((aid, w, loc), "?") for loc in F}
             info[(aid, w)] = {"F": F, "B": B, "Mr": Mr, "nat": nat,
                               "gmap": gmap}

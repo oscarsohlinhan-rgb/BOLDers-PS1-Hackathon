@@ -36,6 +36,12 @@ cd web && npm install && npm run dev      # opens on :3000, /api -> :8000
 python3 -m api.tests.run_checks           # regression + mutation tests
 ```
 
+The mutation suite includes feasible workload increases, exact-horizon and
+one-over cases, competing work, workfront and weekly-allocation boundaries,
+capacity and per-possession mix limits, predecessor timing, Scenario B dates,
+Scenario C ECLO windows, Live mirrors, buffer warnings, and malformed schedule
+fields. Every infeasible pipeline case must return no CSV files.
+
 Optional AI configuration stays in the future Settings-page browser session.
 Never commit a real key. `POST /ai/explain` accepts it only through an ephemeral
 `X-DeepSeek-API-Key` header and does not persist or return it. The public API
