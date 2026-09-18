@@ -11,8 +11,10 @@ Private team collaboration repository:
 - `api/` — Python FastAPI service. Importer (`model.py`), greedy+repair solver
   (`solver.py`), independent validator (`validator.py`), exact exporter + scoring
   (`exporter.py`). Stdlib only + fastapi/uvicorn.
-- `web/` — Next.js 14 UI. Upload 8 CSVs, pick scenario, solve, inspect
-  violations/scores, download the 3 output CSVs. Proxies `/api/*` to the backend.
+- `web/` — Next.js 14 UI. Upload a complete user-supplied 8-file scenario
+  dataset, pick the A/B/C optimization policy, solve, inspect violations/scores,
+  and download the 3 output CSVs. No dataset is preloaded or offered as a
+  sample shortcut. Proxies `/api/*` to the backend.
 - `api/replanner.py` — narrow deterministic disruption parser and minimal-churn
   repair. Unaffected activities remain locked; only the independent validator
   can release replanned CSVs. The explainer is templated and never establishes
@@ -87,8 +89,10 @@ Verified Google Cloud deployment (19 September 2026, source commit `84eb860`):
   passed with evidence `SCHEMA-77e3579d6038a895`; Scenario A `/solve` passed the
   independent validator with zero hard violations and returned exactly 192
   access rows, 928 occupancy rows, 14 result rows, and all three CSV files.
-- Browser smoke evidence: the public sample loaded 8/8 files and the rendered UI
-  reported `FEASIBLE · 0 hard violations` with Scenario A score 32.2.
+- Browser smoke evidence for the initial deployment: the public pack loaded 8/8
+  files and the rendered UI reported `FEASIBLE · 0 hard violations` with
+  Scenario A score 32.2. The current judge-facing flow requires the user to
+  select all eight CSVs directly; it does not preload or fetch a sample dataset.
 
 ## Fallback deploy (Railway, one project, two services)
 
@@ -103,6 +107,11 @@ Verified Google Cloud deployment (19 September 2026, source commit `84eb860`):
 
 ## Method + documented assumptions
 
+- When a PS1 requirement is unclear, inspect the official organiser repository
+  (`aochinwen/NebulaX-Hackathon-ProblemStatement`) first: current README, eight
+  input CSVs, and supplied output sample. If those official sources conflict,
+  document the exact conflict and leave it unresolved pending the reference
+  validator or organiser ruling instead of inventing a rule.
 - Greedy constructor ordered by constraint tightness (predecessor depth,
   deadline slack, buffer footprint, hotspot scarcity, workload, tier weight),
   then bounded deterministic repair + improvement (lexicographic: hard
@@ -138,6 +147,7 @@ Scenario A/B/C all feasible on the public pack, 0 hard violations
 P6 stretch is implemented as a narrow deterministic command box (`block … in
 week …` / `delay … by … weeks`), minimal-churn dependency repair, templated
 before/after explanation and validator-gated export. There is no generative AI
-in the feasibility or CSV path. The backend now includes a deterministic schema
-gate and an optional DeepSeek evidence explainer; the mixed-format adapter,
-roadblock persistence, Settings UI, and Google Cloud deployment remain pending.
+  in the feasibility or CSV path. The backend now includes a deterministic schema
+  gate and an optional DeepSeek evidence explainer. Google Cloud deployment is
+  verified; the mixed-format adapter, roadblock persistence, and Settings UI
+  remain pending.

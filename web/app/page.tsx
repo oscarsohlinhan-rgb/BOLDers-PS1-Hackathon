@@ -7,8 +7,6 @@ const EXPECTED = [
   "04_LOCATION_SUPPLY.csv", "05_BUFFER_LOCATION.csv",
   "06_PARAMETERS.csv", "07_PROJECT_DETAILS.csv", "08_ACTIVITY_DETAILS.csv",
 ];
-const RAW =
-  "https://raw.githubusercontent.com/aochinwen/NebulaX-Hackathon-ProblemStatement/main/PS1/01_data/";
 
 type Report = {
   scenario: string;
@@ -60,19 +58,6 @@ export default function Page() {
     setFiles(m);
   }
 
-  async function loadSample() {
-    setBusy(true); setError("");
-    try {
-      const m = new Map<string, File>();
-      for (const n of EXPECTED) {
-        const r = await fetch(RAW + n);
-        if (!r.ok) throw new Error("fetch " + n);
-        m.set(n, new File([await r.blob()], n, { type: "text/csv" }));
-      }
-      setFiles(m);
-    } catch (e) { setError(String(e)); } finally { setBusy(false); }
-  }
-
   async function solve() {
     const missing = EXPECTED.filter((n) => !files.has(n));
     if (missing.length) { setError("missing: " + missing.join(", ")); return; }
@@ -113,12 +98,12 @@ export default function Page() {
   return (
     <>
       <h1>PS1 Track Access Optimiser</h1>
-      <p>Upload the 8 instance CSVs, pick a scenario, solve, validate, export. Deterministic greedy + independent hard validator.</p>
+      <p>Upload your complete 8-file scenario dataset, choose the optimization policy, solve, validate, and export. Deterministic greedy + independent hard validator.</p>
 
       <div className="card">
-        <h3>1. Instance files ({files.size}/8)</h3>
+        <h3>1. Upload scenario data ({files.size}/8 files)</h3>
         <input type="file" accept=".csv" multiple onChange={(e) => pick(e.target.files)} />
-        <div><button className="ghost" onClick={loadSample} disabled={busy}>Load public sample dataset</button></div>
+        <p className="mono">Select the eight official PS1 CSV files for this run. No dataset is preloaded.</p>
         <div className="mono">{EXPECTED.map((n) => `${files.has(n) ? "✓" : "○"} ${n}`).join("  ")}</div>
       </div>
 
