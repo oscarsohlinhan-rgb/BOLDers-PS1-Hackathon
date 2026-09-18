@@ -139,7 +139,9 @@ Each large labelled group below is one main step. The smaller boxes inside it
 show exactly what happens during that step. AI assistance nodes appear as
 dashed-outline shapes with dashed support arrows. They sit off the authority
 path: the deterministic gates and functions remain on the solid-line authority
-path.
+path. A `Start a new pass at Step ...` connector ends the current pass and names
+where the next pass begins. This keeps the numbered stages in reading order
+without drawing long backward arrows across the chart.
 
 ```mermaid
 graph TB
@@ -225,7 +227,7 @@ graph TB
     retry -->|Yes| repair1["Move or swap a small number of assignments"]
     repair1 --> check1
 
-    subgraph failed["If no valid plan is found"]
+    subgraph failed["Step 6B: Explain why no valid plan was found"]
         direction LR
         failed1["Show the rules that block the plan"] --> failed2["Show which lock or input must change"] --> failed3["Send the decision to the planner"]
     end
@@ -236,7 +238,7 @@ graph TB
 
     retry -->|No| failed1
 
-    subgraph explain["Step 6: Explain the checked plan"]
+    subgraph explain["Step 6A: Explain the checked plan"]
         direction LR
         explain1["Show the assigned work"] --> explain2["Show every move, delay, warning and score change"] --> explain3["Show local validator result: zero hard-rule failures"]
     end
@@ -251,7 +253,7 @@ graph TB
     end
 
     review2 --> approved{"Did the planner approve this version?"}
-    approved -->|No, change input| inputkind
+    approved -->|No, change input| restart1(["Start a new pass at Step 1 with the changed input"])
 
     subgraph publish["Step 8: Publish and protect the approved plan"]
         direction LR
@@ -268,10 +270,20 @@ graph TB
     publish3 --> run1
     run3 --> outcome{"What happened?"}
     outcome -->|Completed| done["Record completion and close the audit trail"]
-    outcome -->|Cannot continue| status1
+    outcome -->|Cannot continue| restart2(["Start a new pass at Step 2 and record the roadblock"])
 
     publish3 --> changed{"Did an important input change?"}
-    changed -->|Yes| change1
+    changed -->|Yes| restart4(["Start a new pass at Step 4B and make a changed plan"])
+
+    %% Layout-only spine keeps the numbered stages in top-to-bottom order.
+    receive1 ~~~ status1
+    status1 ~~~ order1
+    order1 ~~~ make1
+    make1 ~~~ check1
+    check1 ~~~ explain1
+    explain1 ~~~ review1
+    review1 ~~~ publish1
+    publish1 ~~~ run1
 
     classDef input fill:#d3f9d8,stroke:#2f9e44,color:#1b4332
     classDef decision fill:#ffe3e3,stroke:#c92a2a,color:#7f1d1d
@@ -282,7 +294,7 @@ graph TB
     class start,receive1,receive2,receive3,aidraft,status1,status2 input
     class inputkind,complete,statuscheck,status3,returncheck,userreturn,choose,pass,retry,approved,outcome,changed decision
     class schemagate,order1,order2,order3,order4,make1,make2,make3,make4,change1,change2,change3,check1,check2,check3 process
-    class missing1,missing2,cancelled,interrupted,deferred,wait,repair1,failed1,failed2,failed3 action
+    class missing1,missing2,cancelled,interrupted,deferred,wait,repair1,failed1,failed2,failed3,restart1,restart2,restart4 action
     class explain1,explain2,explain3,review1,review2,publish1,publish2,publish3,run1,run2,run3,done output
     class aiadapter,aisuggest,airoadblock,airexplain ai
 ```
