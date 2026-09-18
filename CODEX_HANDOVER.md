@@ -56,12 +56,18 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
    to `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`; do not hard-code
    port 8000. Set each service's Railway config-file/root path explicitly and
    warm before demo.
-2. Submission: private collaboration remote is
+2. Winning demo: use the 18 Sep SMRT operator consultation as the narrative.
+   Show a validated base plan, then inject a morning condition alert/urgent
+   defect that removes an access opportunity, preserve locked/unaffected work,
+   show exact moves and trade-offs, revalidate, and require human approval.
+   Do not build the handwritten category queue literally; the challenged,
+   operator-grounded design is in `docs/PRIORITY_AND_REPLAN_PIPELINE.md`.
+3. Submission: private collaboration remote is
    `https://github.com/oscarsohlinhan-rgb/BOLDers-PS1-Hackathon`; prepare the
    final public/submission URL, hosted URL, 2–3-min video, write-up, and ZIP of
    9 CSVs (3 scenarios × 3 files). Pack says GitHub, PS1 README says GitLab —
    bring both URLs if the organisers do not clarify the conflict.
-3. Open organiser questions: official validator + `trackaccess` helper absent;
+4. Open organiser questions: official validator + `trackaccess` helper absent;
    buffer semantics pending confirmation (ours documented in README).
 
 ## Gotchas

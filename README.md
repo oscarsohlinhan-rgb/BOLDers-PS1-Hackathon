@@ -17,6 +17,9 @@ Private team collaboration repository:
   repair. Unaffected activities remain locked; only the independent validator
   can release replanned CSVs. The explainer is templated and never establishes
   feasibility.
+- `docs/PRIORITY_AND_REPLAN_PIPELINE.md` — operator-grounded redesign of the
+  initial event-sorting sketch. It separates work type, lifecycle state,
+  dynamic risk, deterministic feasibility, EWR judgment, and execution/replan.
 
 ## Local run
 
