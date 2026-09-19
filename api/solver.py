@@ -37,9 +37,10 @@ def duration_fits_slot(job_duration_minutes: float,
 
 class SlotInfo:
     __slots__ = ("aid", "week", "foot", "buf", "mir", "group", "atype",
-                 "nat")
+                 "nat", "contract", "activity_type", "night")
 
-    def __init__(self, aid, week, foot, buf, mir, group, atype, nat):
+    def __init__(self, aid, week, foot, buf, mir, group, atype, nat,
+                 contract="", activity_type="", night=0):
         self.aid = aid
         self.week = week
         self.foot = foot      # set footprint locations
@@ -48,6 +49,9 @@ class SlotInfo:
         self.group = group
         self.atype = atype    # contract access_type PM|PC|C
         self.nat = nat        # nature of works
+        self.contract = contract  # contract_number for local-key concurrency
+        self.activity_type = activity_type  # Renewal|Construction
+        self.night = night    # access_night for local-key concurrency
 
 
 class State:
@@ -125,17 +129,32 @@ class State:
             same = [t for _, g, t in present if g == group]
             if not self._mix_ok(same + [c.access_type]):
                 return False
-        # Spatial hard block: Live power-cut mirrors only (validator
-        # treats other overlaps as soft warnings, per official sample).
-        # Other overlaps are still minimized by repair's warning count.
+        # Spatial hard blocks agree with the independent validator:
+        # sector expansion unchanged; Live mirrors stay hard week-based;
+        # non-Live concurrency exists only for the official local key
+        # (contract_number, activity_type, week, access_night); exact
+        # same (location_id, week, co_share_group) is exempt at that
+        # footprint; concurrent actual overlap is closure; concurrent
+        # actual into exclusion-only buffer is buffer; buffer-vs-buffer
+        # and cross-contract/type overlaps stay warnings.
         for s in self.slots:
             if s.week != week:
                 continue
-            if s.group == group and (F & s.foot):
-                continue  # same possession: exempt
-            if Mr & (s.foot | s.buf | s.mir):
+            exempt = (F & s.foot) if s.group == group else set()
+            mirror_hit = ((Mr & (s.foot | s.buf | s.mir)) |
+                          ((B | F) & s.mir)) - exempt
+            if mirror_hit:
                 return False
-            if (B | F) & s.mir:
+            concurrent = (s.contract == a.contract
+                          and s.activity_type == a.atype
+                          and s.night == night)
+            if not concurrent:
+                continue
+            if (F & s.foot) - exempt:
+                return False
+            excl = B - F
+            s_excl = s.buf - s.foot
+            if ((F & s_excl) | (s.foot & excl)) - exempt:
                 return False
         return True
 
@@ -167,11 +186,12 @@ class State:
             self.groups[(aid, week, loc)] = group
         F = self.foot(aid)
         nat = self.nature(aid)
+        act = self.inst.activities[aid]
         self.slots.append(SlotInfo(
             aid, week, F, self.inst.buffer_footprint(list(F), nat),
             self.inst.mirror_blocks(list(F), nat), group,
-            self.inst.contracts[self.inst.activities[aid].contract].access_type,
-            nat))
+            self.inst.contracts[act.contract].access_type,
+            nat, act.contract, act.atype, night))
 
     def unplace(self, aid: str, week: int):
         self.accesses[aid] = [x for x in self.accesses[aid] if x[0] != week]

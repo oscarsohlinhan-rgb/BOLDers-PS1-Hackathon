@@ -340,8 +340,13 @@ placement passes all applicable official rules:
 1. the full workload is still scheduled;
 2. the activity does not start before `planned_start_date`;
 3. its predecessor finishes in a strictly earlier week;
-4. location closures, buffers, and Live opposite-bound or interchange closures
-   do not conflict;
+4. sector expansion is unchanged; for non-Live work, concurrency exists only
+   for the official local key (contract_number, activity_type, week,
+   access_night); exact same (location_id, week, co_share_group) is exempt
+   at that shared footprint; concurrent actual overlap is hard closure;
+   concurrent actual into exclusion-only buffer is hard buffer;
+   buffer-vs-buffer and cross-contract/type overlaps stay warnings; Live
+   opposite-bound and H01/H02 interchange mirrors stay hard;
 5. each possession uses an allowed `PM`, `PC`, and `C` mix;
 6. only activities in the same location, week, and `co_share_group` share one
    possession;
@@ -354,11 +359,12 @@ placement passes all applicable official rules:
 
 Scenario A forbids ECLO and excess supply. Scenario B forbids finishing after
 the planned completion date. Scenario C permits only its published limited
-supply flexibility. The official brief describes non-overlapping buffers as a
-hard rule, but the supplied zero-violation sample conflicts with the literal
-geometry. The app still reports those disputed non-Live overlaps as warnings
-and keeps Live mirror conflicts hard until the official validator or organiser
-settles the meaning.
+supply flexibility. Different local nights within the same contract/type key
+are not concurrent, and equal numeric access_night across different
+contract/type keys is not a global night. The official sample remains zero
+hard under this rule. Solver `State.test` agrees with the independent
+validator. Do not call this proven reference-validator behaviour; obtain the
+official validator or organiser ruling.
 
 **Change-as-little-as-possible replan**
 

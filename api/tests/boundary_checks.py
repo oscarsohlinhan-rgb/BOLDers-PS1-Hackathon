@@ -397,3 +397,172 @@ def run(check):
           "buffer_note" in _rules(V.warnings(
               buffer_inst, buffer_accesses, buffer_groups, "A")),
           "buffer overlap warning missing")
+
+    # Local-key concurrency: deterministic simultaneity for non-Live work
+    # exists only for the official local key
+    # (contract_number, activity_type, week, access_night).
+    loc_a = "SEC:ALP:S01_S02:EB"
+    loc_b = "SEC:ALP:S02_S03:EB"
+    loc_c = "SEC:ALP:S03_S04:EB"
+
+    def _sample_zero_hard():
+        import csv as _csv
+        sample = "/tmp/PS1-latest/03_submission_sample"
+        acc = {}
+        grp = {}
+        with open(sample + "/SCHEDULE_ACCESS.csv",
+                  encoding="utf-8-sig") as handle:
+            for row in _csv.DictReader(handle):
+                acc.setdefault(row["activity_id"], []).append(
+                    (int(row["week"]), int(row["access_night"]),
+                     int(row["eclo"])))
+        with open(sample + "/SCHEDULE_OCCUPANCY.csv",
+                  encoding="utf-8-sig") as handle:
+            for row in _csv.DictReader(handle):
+                grp[(row["activity_id"], int(row["week"]),
+                     row["location_id"])] = row["co_share_group"]
+        return V.validate(base, acc, grp, "A")
+
+    check("boundary-official-sample-zero-hard",
+          not _sample_zero_hard(),
+          str(_sample_zero_hard()[:2]))
+
+    # Concurrent actual footprint overlap between distinct possessions
+    # is hard closure.
+    closure_inst = _instance_with(
+        base, [_activity("K1", "C001", loc_a),
+               _activity("K2", "C001", loc_b)])
+    closure_acc = {"K1": [(1, 1, 0)], "K2": [(1, 1, 0)]}
+    closure_grp = _groups(
+        closure_inst, closure_acc,
+        lambda aid, _week: "g-k1" if aid == "K1" else "g-k2")
+    closure_hard = V.validate(closure_inst, closure_acc, closure_grp, "A")
+    check("boundary-concurrent-actual-closure-hard",
+          "closure" in _rules(closure_hard),
+          str(closure_hard))
+
+    # Concurrent actual footprint entering another possession's
+    # exclusion-only buffer is hard buffer. Use reach=2 copy so the
+    # footprints stay disjoint while the buffer reaches.
+    buffer2_inst = _instance_with(
+        base, [_activity("B1", "C001", loc_a),
+               _activity("B2", "C001", loc_c)])
+    buffer2_inst.buffers["Non-live (Consist)"] = (2, 0)
+    buffer2_acc = {"B1": [(1, 1, 0)], "B2": [(1, 1, 0)]}
+    buffer2_grp = _groups(
+        buffer2_inst, buffer2_acc,
+        lambda aid, _week: "g-b1" if aid == "B1" else "g-b2")
+    buffer2_hard = V.validate(buffer2_inst, buffer2_acc, buffer2_grp, "A")
+    check("boundary-concurrent-exclusion-buffer-hard",
+          "buffer" in _rules(buffer2_hard) and
+          "closure" not in _rules(buffer2_hard),
+          str(buffer2_hard))
+
+    # Pure buffer-vs-buffer overlap is not hard; shared empty clearance
+    # stays a buffer_note warning.
+    bufbuf_inst = _instance_with(
+        base, [_activity("Q1", "C001", loc_a),
+               _activity("Q2", "C001", loc_c)])
+    bufbuf_acc = {"Q1": [(1, 1, 0)], "Q2": [(1, 1, 0)]}
+    bufbuf_grp = _groups(
+        bufbuf_inst, bufbuf_acc,
+        lambda aid, _week: "g-q1" if aid == "Q1" else "g-q2")
+    check("boundary-pure-buffer-buffer-allowed",
+          not V.validate(bufbuf_inst, bufbuf_acc, bufbuf_grp, "A"),
+          str(V.validate(bufbuf_inst, bufbuf_acc, bufbuf_grp, "A")))
+    check("boundary-pure-buffer-buffer-warned",
+          "buffer_note" in _rules(V.warnings(
+              bufbuf_inst, bufbuf_acc, bufbuf_grp, "A")),
+          "buffer-buffer warning missing")
+
+    # Same contract/type different local nights are not concurrent.
+    diffnight_inst = _instance_with(
+        base, [_activity("D1", "C001", loc_a),
+               _activity("D2", "C001", loc_b)])
+    diffnight_acc = {"D1": [(1, 1, 0)], "D2": [(1, 2, 0)]}
+    diffnight_grp = _groups(
+        diffnight_inst, diffnight_acc,
+        lambda aid, _week: "g-d1" if aid == "D1" else "g-d2")
+    check("boundary-same-key-different-nights-allowed",
+          not V.validate(
+              diffnight_inst, diffnight_acc, diffnight_grp, "A"),
+          str(V.validate(
+              diffnight_inst, diffnight_acc, diffnight_grp, "A")))
+    check("boundary-same-key-different-nights-no-warning",
+          "buffer_note" not in _rules(V.warnings(
+              diffnight_inst, diffnight_acc, diffnight_grp, "A")),
+          str(V.warnings(diffnight_inst, diffnight_acc, diffnight_grp,
+                         "A")))
+
+    # Equal numeric access_night across different contract/type keys is
+    # not a global night and must not create a hard failure.
+    cross_inst = _instance_with(
+        base, [_activity("X1", "C001", loc_a),
+               _activity("X2", "C002", loc_b)])
+    cross_acc = {"X1": [(1, 1, 0)], "X2": [(1, 1, 0)]}
+    cross_grp = _groups(
+        cross_inst, cross_acc,
+        lambda aid, _week: "g-x1" if aid == "X1" else "g-x2")
+    cross_hard = V.validate(cross_inst, cross_acc, cross_grp, "A")
+    check("boundary-cross-contract-same-night-not-hard",
+          "closure" not in _rules(cross_hard) and
+          "buffer" not in _rules(cross_hard),
+          str(cross_hard))
+    check("boundary-cross-contract-same-night-warned",
+          "buffer_note" in _rules(V.warnings(
+              cross_inst, cross_acc, cross_grp, "A")),
+          "cross-contract warning missing")
+
+    # Exact same (location_id, week, co_share_group) is one co-shared
+    # possession and exempt at that shared footprint.
+    share_inst = _instance_with(
+        base, [_activity("S1", "C001", loc_a),
+               _activity("S2", "C001", loc_a)])
+    share_acc = {"S1": [(1, 1, 0)], "S2": [(1, 1, 0)]}
+    share_grp = _groups(
+        share_inst, share_acc, lambda _aid, _week: "g-shared")
+    check("boundary-exact-coshare-tuple-exempt",
+          not V.validate(share_inst, share_acc, share_grp, "A"),
+          str(V.validate(share_inst, share_acc, share_grp, "A")))
+
+    # Existing hard Live opposite-bound and H01/H02 interchange mirror
+    # behavior is preserved.
+    live_inst = _instance_with(base, [base.activities["A003"],
+                                      base.activities["A074"]])
+    live_acc = {
+        "A003": [(11, 1, 0), (12, 1, 0), (13, 1, 0),
+                 (14, 1, 0), (21, 1, 0)],
+        "A074": [(21, 1, 0)],
+    }
+    live_grp = _groups(live_inst, live_acc)
+    check("boundary-live-mirror-preserved-hard",
+          "mirror" in _rules(V.validate(live_inst, live_acc, live_grp, "A")),
+          "Live mirror not preserved")
+
+    # Solver State.test agrees with the independent validator for
+    # representative accept/reject placements.
+    st_reject = S.State(closure_inst, "A")
+    st_reject.place("K1", 1, 1, "g-k1", 0)
+    check("boundary-solver-rejects-concurrent-closure",
+          not st_reject.test("K2", 1, 1, "g-k2"),
+          "solver accepted a concurrent closure")
+    st_accept_night = S.State(diffnight_inst, "A")
+    st_accept_night.place("D1", 1, 1, "g-d1", 0)
+    check("boundary-solver-accepts-different-nights",
+          st_accept_night.test("D2", 1, 2, "g-d2"),
+          "solver rejected different local nights")
+    st_accept_cross = S.State(cross_inst, "A")
+    st_accept_cross.place("X1", 1, 1, "g-x1", 0)
+    check("boundary-solver-accepts-cross-contract-same-night",
+          st_accept_cross.test("X2", 1, 1, "g-x2"),
+          "solver rejected cross-contract same night number")
+    st_accept_bufbuf = S.State(bufbuf_inst, "A")
+    st_accept_bufbuf.place("Q1", 1, 1, "g-q1", 0)
+    check("boundary-solver-accepts-buffer-buffer",
+          st_accept_bufbuf.test("Q2", 1, 1, "g-q2"),
+          "solver rejected pure buffer-buffer")
+    st_reject_buf = S.State(buffer2_inst, "A")
+    st_reject_buf.place("B1", 1, 1, "g-b1", 0)
+    check("boundary-solver-rejects-exclusion-buffer",
+          not st_reject_buf.test("B2", 1, 1, "g-b2"),
+          "solver accepted an exclusion-only intrusion")

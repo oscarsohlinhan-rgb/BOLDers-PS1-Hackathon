@@ -110,12 +110,17 @@ def _validate_full(inst: Instance, accesses: Accesses, groups: Groups,
                     f"after predecessor {a.predecessor} finish "
                     f"week {last_week[a.predecessor]}")
     # per-week slot table
-    info = {}  # (aid, week) -> dict(F,B,Mr,nat,gmap)
+    info = {}  # (aid, week) -> dict(F,B,Mr,nat,gmap,nights,contract,atype)
     warn: List[dict] = []
     for aid, lst in accesses.items():
         if aid not in acts:
             continue
         F, B, Mr, nat = _slot_sets(inst, aid)
+        # Nights per week for the official local concurrency key
+        # (contract_number, activity_type, week, access_night).
+        nights_by_week: Dict[int, set] = {}
+        for (w, _n, _e) in lst:
+            nights_by_week.setdefault(w, set()).add(_n)
         for (w, _n, _e) in lst:
             missing_groups = [loc for loc in F
                               if not groups.get((aid, w, loc))]
@@ -124,16 +129,27 @@ def _validate_full(inst: Instance, accesses: Accesses, groups: Groups,
                     f"{aid}: missing co-share group for "
                     f"{sorted(missing_groups)[:3]}")
             gmap = {loc: groups.get((aid, w, loc), "?") for loc in F}
+            a = acts[aid]
             info[(aid, w)] = {"F": F, "B": B, "Mr": Mr, "nat": nat,
-                              "gmap": gmap}
+                              "gmap": gmap,
+                              "nights": nights_by_week.get(w, set()),
+                              "contract": a.contract, "atype": a.atype}
 
     # R4 closures / buffers / mirrors.
-    # Evidence rule (official sample is feasible): cross-possession
-    # buffer/footprint overlaps occur in the feasible sample, so the
-    # only hard spatial block is a Live power-cut mirror. All other
-    # overlaps are soft warnings. R5 mixes apply per POSSESSION
-    # (location, week, group): the sample co-shares 1 PC + 4 C at one
-    # location-week split across groups, legal per group.
+    # Sector expansion is unchanged. Deterministic concurrency for
+    # non-Live work exists only for the official local key
+    # (contract_number, activity_type, week, access_night): different
+    # local nights within that key are not concurrent, and equal numeric
+    # access_night across different contract/type keys is not a global
+    # night. Exact same (location_id, week, co_share_group) is one
+    # co-shared possession and exempt at that shared footprint.
+    # Concurrent actual overlap is hard closure; concurrent actual into
+    # another possession's exclusion-only buffer is hard buffer.
+    # Buffer-vs-buffer stays a buffer_note warning (shared empty
+    # clearance). Cross-contract/type apparent overlaps without provable
+    # simultaneity stay warnings. Live opposite-bound and H01/H02
+    # interchange mirrors stay hard week-based. R5 mixes apply per
+    # POSSESSION (location, week, group).
     keys = sorted(info)
     for i in range(len(keys)):
         for j in range(i + 1, len(keys)):
@@ -141,17 +157,42 @@ def _validate_full(inst: Instance, accesses: Accesses, groups: Groups,
             if w1 != w2:
                 continue
             s1, s2 = info[(a1, w1)], info[(a2, w2)]
-            shared = s1["F"] & s2["F"]
-            if shared and any(s1["gmap"][l] == s2["gmap"][l] for l in shared):
-                continue  # same possession: exempt
+            exempt = {loc for loc in (s1["F"] & s2["F"])
+                      if s1["gmap"].get(loc) == s2["gmap"].get(loc)
+                      and s1["gmap"].get(loc) != "?"}
             other1 = s1["F"] | s1["B"] | s1["Mr"]
             other2 = s2["F"] | s2["B"] | s2["Mr"]
-            if (s1["Mr"] & other2) | (s2["Mr"] & other1):
+            mirror_hit = ((s1["Mr"] & other2) | (s2["Mr"] & other1)) - exempt
+            if mirror_hit:
                 add("mirror", [a1, a2], [w1],
                     f"wk{w1}: {a1} inside Live power-cut mirror of {a2}")
                 continue
-            hit = ((s1["B"] | s1["F"]) & (s2["F"] | s2["B"]) |
-                   (s2["B"] | s2["F"]) & (s1["F"] | s1["B"]))
+            concurrent = (
+                s1["contract"] == s2["contract"]
+                and s1["atype"] == s2["atype"]
+                and bool(s1["nights"] & s2["nights"])
+            )
+            if concurrent:
+                closure = (s1["F"] & s2["F"]) - exempt
+                if closure:
+                    add("closure", [a1, a2], [w1],
+                        f"wk{w1}: {a1} inside closure of {a2} "
+                        f"at {sorted(closure)[:3]}")
+                    continue
+                excl1 = s1["B"] - s1["F"]
+                excl2 = s2["B"] - s2["F"]
+                buf_hit = ((s1["F"] & excl2) | (s2["F"] & excl1)) - exempt
+                if buf_hit:
+                    add("buffer", [a1, a2], [w1],
+                        f"wk{w1}: {a1} inside exclusion buffer of {a2} "
+                        f"at {sorted(buf_hit)[:3]}")
+                    continue
+            same_key = (s1["contract"] == s2["contract"]
+                        and s1["atype"] == s2["atype"])
+            if same_key and not concurrent:
+                continue  # definitively non-concurrent local nights:
+                # neither hard nor buffer_note
+            hit = (((s1["B"] | s1["F"]) & (s2["F"] | s2["B"])) - exempt)
             if hit:
                 warn.append({"rule": "buffer_note", "aids": sorted([a1, a2]),
                              "weeks": [w1],

@@ -5,6 +5,7 @@ PROJECT_ID="${1:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${GCP_REGION:-asia-southeast1}"
 API_SERVICE="${API_SERVICE:-ps1-api}"
 WEB_SERVICE="${WEB_SERVICE:-ps1-web}"
+API_SERVICE_ACCOUNT="${API_SERVICE_ACCOUNT:-ps1-api-runtime}"
 
 if [[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == "(unset)" ]]; then
   echo "usage: $0 <google-cloud-project-id>" >&2
@@ -28,13 +29,28 @@ gcloud services enable \
   run.googleapis.com \
   cloudbuild.googleapis.com \
   artifactregistry.googleapis.com \
+  aiplatform.googleapis.com \
   --project "${PROJECT_ID}"
+
+API_SERVICE_ACCOUNT_EMAIL="${API_SERVICE_ACCOUNT}@${PROJECT_ID}.iam.gserviceaccount.com"
+if ! gcloud iam service-accounts describe "${API_SERVICE_ACCOUNT_EMAIL}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
+  gcloud iam service-accounts create "${API_SERVICE_ACCOUNT}" \
+    --project "${PROJECT_ID}" \
+    --display-name "Project TAO API runtime"
+fi
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member "serviceAccount:${API_SERVICE_ACCOUNT_EMAIL}" \
+  --role roles/aiplatform.user \
+  --condition=None \
+  --quiet >/dev/null
 
 gcloud run deploy "${API_SERVICE}" \
   --source "${REPO_ROOT}/api" \
   --project "${PROJECT_ID}" \
   --region "${REGION}" \
   --platform managed \
+  --service-account "${API_SERVICE_ACCOUNT_EMAIL}" \
+  --set-env-vars "GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=True,VERTEX_GEMINI_MODEL=gemini-2.5-flash" \
   --allow-unauthenticated \
   --cpu 1 \
   --memory 1Gi \

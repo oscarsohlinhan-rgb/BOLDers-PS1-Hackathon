@@ -1,4 +1,4 @@
-# PS1 Track Access Optimiser (BOLDers, NEBULA X 2026)
+# Project TAO — Track Access Optimiser (BOLDers, NEBULA X 2026)
 
 Schedules contracted railway track access over a 30-week horizon for all three
 scenarios (A/B/C) and proves each schedule against an independent hard validator.
@@ -11,10 +11,14 @@ Private team collaboration repository:
 - `api/` — Python FastAPI service. Importer (`model.py`), greedy+repair solver
   (`solver.py`), independent validator (`validator.py`), exact exporter + scoring
   (`exporter.py`). Stdlib only + fastapi/uvicorn.
-- `web/` — Next.js 14 UI. Upload a complete user-supplied 8-file scenario
-  dataset, pick the A/B/C optimization policy, solve, inspect violations/scores,
-  and download the 3 output CSVs. No dataset is preloaded or offered as a
-  sample shortcut. Proxies `/api/*` to the backend.
+- `web/` — Next.js 14 Project TAO UI. A short skippable welcome transition
+  yields to a focused drag-and-drop workspace. Upload a complete user-supplied
+  8-file dataset and
+  press one `Process dataset` button. There is no pre-run A/B/C selector: the
+  pipeline validates the bundle, runs all three official policies, exposes a
+  compact live stage log, and releases three output CSVs for each feasible
+  policy. No dataset is preloaded or offered as a sample shortcut. Proxies
+  `/api/*` to the backend.
 - `api/replanner.py` — narrow deterministic disruption parser and minimal-churn
   repair. Unaffected activities remain locked; only the independent validator
   can release replanned CSVs. The explainer is templated and never establishes
@@ -22,12 +26,17 @@ Private team collaboration repository:
 - `api/pipeline.py` — deterministic eight-file schema gate, stable evidence
   IDs, solver orchestration, independent-validator release gate, and exact CSV
   release only for feasible candidates.
-- `api/ai_explainer.py` — optional DeepSeek explanation of already-checked
+- `api/ai_explainer.py` — optional Vertex Gemini explanation of already-checked
   structured evidence. It has no scheduling, validation, approval, state-change,
   or export authority and degrades to deterministic text when AI is unavailable.
 - `docs/PRIORITY_AND_REPLAN_PIPELINE.md` — operator-grounded redesign of the
   initial event-sorting sketch. It separates work type, lifecycle state,
   dynamic risk, deterministic feasibility, EWR judgment, and execution/replan.
+- `docs/UI_USER_FLOW.md` — standalone Mermaid interface journey covering the
+  upload, implemented consent-gated AI conversion, processing, result, export,
+  replan, and planned assistance screens.
+  Backend control flow remains in the pipeline document rather than being mixed
+  into this UI graph.
 
 ## Local run
 
@@ -35,6 +44,8 @@ Private team collaboration repository:
 python3 -m pip install -r api/requirements.txt
 python3 -m uvicorn api.main:app --port 8000  # from repo root
 cd web && npm install && npm run dev      # opens on :3000, /api -> :8000
+cd web && npm test                         # UI interaction-contract tests
+python3 -m unittest api.tests.test_ai_converter -v  # AI adapter boundary tests
 python3 -m api.tests.run_checks           # regression + mutation tests
 ```
 
@@ -44,11 +55,23 @@ capacity and per-possession mix limits, predecessor timing, Scenario B dates,
 Scenario C ECLO windows, Live mirrors, buffer warnings, and malformed schedule
 fields. Every infeasible pipeline case must return no CSV files.
 
-Optional AI configuration stays in the future Settings-page browser session.
-Never commit a real key. `POST /ai/explain` accepts it only through an ephemeral
-`X-DeepSeek-API-Key` header and does not persist or return it. The public API
-does not read a server-wide DeepSeek key, which prevents unauthenticated users
-from spending shared provider credit.
+The intake screen can offer an AI conversion draft when uploaded text data does
+not already match the canonical eight-file contract. The local adapter accepts
+CSV, TSV, JSON, Markdown, and plain text; opaque binary formats are rejected
+before any provider call. Filename mismatches do not use AI: the user assigns
+each unmatched file to an available `01`–`08` canonical slot and Project TAO
+creates an internal renamed copy. Gemini is offered only after deterministic
+content validation fails. The interface shows the exact files first and
+requires explicit consent before `POST /ai/convert`. Originals remain
+unchanged, the draft stays editable and untrusted, ambiguities require user
+confirmation, and only the deterministic schema gate can admit all eight
+canonical tables.
+
+`POST /ai/explain` can produce a local deterministic summary without any cloud
+call. With explicit consent it sends only allowlisted structured evidence to
+Gemini on Vertex AI. The API uses the Cloud Run service identity through
+Application Default Credentials; no user or provider API key is accepted by
+the browser.
 
 ## Judging deployment
 
@@ -71,15 +94,18 @@ Next.js services. From an authenticated Google Cloud Shell or workstation:
 ./scripts/deploy_google_cloud.sh <project-id>
 ```
 
-The script enables the required Google APIs, deploys `ps1-api`, discovers its
-Cloud Run URL, then builds and deploys `ps1-web` with that URL as the internal
-rewrite target. Both services use `asia-southeast1` by default, scale to zero,
-and allow unauthenticated judging access. Override `GCP_REGION`, `API_SERVICE`,
-or `WEB_SERVICE` only when the target project requires different names.
+The script enables the required Google APIs (including Vertex AI), creates a
+dedicated `ps1-api-runtime` service account with `roles/aiplatform.user`, and
+deploys `ps1-api` with Vertex Gemini configured through Application Default
+Credentials. It then discovers the Cloud Run URL and deploys `ps1-web` with
+that URL as the internal rewrite target. Both services use
+`asia-southeast1` by default, scale to zero, and allow unauthenticated judging
+access. Override `GCP_REGION`, `API_SERVICE`, `WEB_SERVICE`, or
+`API_SERVICE_ACCOUNT` only when the target project requires different names.
 
-No provider key is deployed. The temporary `.env.production` generated during
-the web build contains only the public API service URL and is deleted when the
-script exits.
+No provider key is deployed. Gemini uses the Cloud Run service identity. The
+temporary `.env.production` generated during the web build contains only the
+public API service URL and is deleted when the script exits.
 
 Verified Google Cloud deployment (19 September 2026, source commit `84eb860`):
 
@@ -130,12 +156,21 @@ Verified Google Cloud deployment (19 September 2026, source commit `84eb860`):
   apply **per possession** (location, week, co-share group). Capacity counts distinct
   possession groups vs `LOCATION_SUPPLY` (A: zero tolerance, C: +1 soft,
   B: soft only). `access_night` is local per contract+type+week.
-- **High-risk unresolved rule:** §2.4 prose says exclusion buffers never overlap
-  and treats them as hard safety constraints, but applying that literal geometry
-  makes the supplied zero-violation sample produce 12 overlaps. The current
-  checker keeps those as warnings and hard-blocks Live mirrors only. Do not call
-  this proven reference-validator behaviour; obtain the official validator or
-  organiser ruling. Solver repair still minimizes warning count as a hedge.
+- Sector expansion is unchanged. For non-Live work, deterministic concurrency
+  exists only for the official local key (contract_number, activity_type, week,
+  access_night): different local nights within that key are not concurrent, and
+  equal numeric access_night across different contract/type keys is not a global
+  night. Exact same (location_id, week, co_share_group) is one co-shared
+  possession and exempt at that shared footprint. Concurrent actual footprint
+  overlap between distinct possessions is hard `closure`; concurrent actual
+  footprint entering another possession's exclusion-only buffer is hard `buffer`.
+  Buffer-vs-buffer overlap stays a `buffer_note` warning (shared empty clearance).
+  Cross-contract/type apparent overlaps without provable simultaneity stay
+  warnings. Live opposite-bound and H01/H02 interchange mirrors stay hard.
+  The official sample remains zero hard under this rule. Solver `State.test`
+  agrees with the independent validator. Do not call this proven
+  reference-validator behaviour; obtain the official validator or organiser
+  ruling. Solver repair still minimizes warning count as a hedge.
 - Open organiser questions: official validator + `trackaccess` helper absent;
   submission says GitHub here vs GitLab in PS1 README; buffer semantics pending
   official confirmation.
@@ -148,6 +183,9 @@ P6 stretch is implemented as a narrow deterministic command box (`block … in
 week …` / `delay … by … weeks`), minimal-churn dependency repair, templated
 before/after explanation and validator-gated export. There is no generative AI
   in the feasibility or CSV path. The backend now includes a deterministic schema
-  gate and an optional DeepSeek evidence explainer. Google Cloud deployment is
-  verified; the mixed-format adapter, roadblock persistence, and Settings UI
+  gate and an optional Vertex Gemini evidence explainer. Google Cloud
+  deployment is verified for the earlier revision; the new Gemini-enabled
+  revision remains local until UI review. Manual filename mapping, the
+  consent-gated mixed-text-format repair adapter, and the Settings UI are
+  implemented locally. Roadblock persistence and broader assistance panels
   remain pending.

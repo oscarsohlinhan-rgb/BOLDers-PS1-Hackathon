@@ -175,16 +175,16 @@ def run(check):
             {"code": "workload", "activity_id": "A001",
              "detail": "31 accesses cannot fit in 30 weeks"}]}
         disabled = explain_evidence(
-            evidence, api_key=None, transport=transport)
-        check("pipe-explain-no-key",
+            evidence, use_ai=False, transport=transport)
+        check("pipe-explain-no-consent",
               disabled["provider"] == "disabled" and not calls,
               str(disabled))
 
         explained = explain_evidence(
-            evidence, api_key="unit-test-key", transport=transport)
-        check("pipe-explain-key-boundary",
-              explained["provider"] == "deepseek" and
-              calls and "unit-test-key" not in calls[-1] and
+            evidence, use_ai=True, transport=transport)
+        check("pipe-explain-gemini-consent-boundary",
+              explained["provider"] == "gemini-vertex" and
+              calls and
               "validator" in explained["explanation"].lower(),
               str(explained))
 
@@ -192,7 +192,7 @@ def run(check):
             raise ConnectionError("offline")
 
         fallback = explain_evidence(
-            evidence, api_key="unit-test-key", transport=broken_transport)
+            evidence, use_ai=True, transport=broken_transport)
         check("pipe-explain-provider-failure",
               fallback["provider"] == "fallback" and
               bool(fallback["explanation"]), str(fallback))
@@ -202,15 +202,10 @@ def run(check):
     check("pipe-api-validate-route", "/validate" in routes, str(routes))
     check("pipe-api-explain-route", "/ai/explain" in routes, str(routes))
 
-    os.environ["DEEPSEEK_API_KEY"] = "test-server-key-must-be-ignored"
-    try:
-        no_shared_key = ai_explain(
-            {"evidence_id": "VALIDATE-env-boundary", "errors": []},
-            x_deepseek_api_key=None)
-        check("pipe-api-ignores-shared-server-key",
-              no_shared_key["provider"] == "disabled", str(no_shared_key))
-    finally:
-        os.environ.pop("DEEPSEEK_API_KEY", None)
+    no_consent = ai_explain(
+        {"evidence_id": "VALIDATE-consent-boundary", "errors": []})
+    check("pipe-api-requires-ai-consent",
+          no_consent["provider"] == "disabled", str(no_consent))
 
     try:
         from fastapi.testclient import TestClient

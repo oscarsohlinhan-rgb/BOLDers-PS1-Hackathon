@@ -6,15 +6,16 @@ import io
 import json
 import os
 import tempfile
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from fastapi import Body, FastAPI, File, Form, Header, UploadFile
+from fastapi import Body, FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from api import exporter as E
 from api import replanner as R
 from api import solver as S
 from api import validator as V
+from api.ai_converter import convert_source_bundle
 from api.ai_explainer import explain_evidence
 from api.model import load_instance
 from api.pipeline import run_solve_pipeline, validate_csv_bundle
@@ -23,6 +24,10 @@ app = FastAPI(title="PS1 Track Access Optimiser")
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_TOTAL_BYTES = 30 * 1024 * 1024
+MAX_CONVERSION_FILE_BYTES = 512 * 1024
+MAX_CONVERSION_TOTAL_BYTES = 1024 * 1024
+MAX_CONVERSION_FILES = 16
+CONVERSION_EXTENSIONS = {".csv", ".tsv", ".txt", ".json", ".md"}
 
 
 def _csv_text(rows) -> str:
@@ -47,6 +52,38 @@ async def _read_bundle(files: list[UploadFile]) -> Dict[str, str]:
         except UnicodeDecodeError as exc:
             raise ValueError("%s is not valid UTF-8 CSV" % name) from exc
     return bundle
+
+
+async def _read_conversion_sources(files: list[UploadFile]) -> Dict[str, str]:
+    if not files:
+        raise ValueError("at least one source file is required")
+    if len(files) > MAX_CONVERSION_FILES:
+        raise ValueError("too many source files for one AI conversion")
+    sources: Dict[str, str] = {}
+    total = 0
+    for upload in files:
+        name = os.path.basename(upload.filename or "")
+        extension = os.path.splitext(name)[1].lower()
+        if not name or extension not in CONVERSION_EXTENSIONS:
+            allowed = ", ".join(sorted(CONVERSION_EXTENSIONS))
+            raise ValueError(
+                f"{name or 'unnamed file'} is not a supported text source; "
+                f"use {allowed}")
+        if name in sources:
+            raise ValueError(f"duplicate source file: {name}")
+        raw = await upload.read()
+        total += len(raw)
+        if (len(raw) > MAX_CONVERSION_FILE_BYTES or
+                total > MAX_CONVERSION_TOTAL_BYTES):
+            raise ValueError("source files are too large for AI conversion")
+        if b"\x00" in raw:
+            raise ValueError(f"{name} appears to be binary and is not supported")
+        try:
+            sources[name] = raw.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"{name} must be UTF-8 text for AI conversion") from exc
+    return sources
 
 
 @app.get("/health")
@@ -82,16 +119,43 @@ async def solve(scenario: str = Form("A"),
 
 
 @app.post("/ai/explain")
-def ai_explain(payload: Dict[str, Any] = Body(...),
-               x_deepseek_api_key: Optional[str] = Header(None)):
-    """Explain checked evidence using only an ephemeral caller-supplied key."""
+def ai_explain(payload: Dict[str, Any] = Body(...)):
+    """Explain checked evidence locally or with consented Vertex Gemini."""
     allowed = {"evidence_id", "errors", "hard_violations", "soft_warnings",
                "status", "scenario"}
     evidence = {key: payload[key] for key in allowed if key in payload}
     if len(json.dumps(evidence, default=str)) > 20000:
         return JSONResponse({"error": "evidence payload is too large"},
                             status_code=413)
-    return explain_evidence(evidence, api_key=x_deepseek_api_key)
+    return explain_evidence(evidence, use_ai=payload.get("consent") is True)
+
+
+@app.post("/ai/convert")
+async def ai_convert(
+    files: list[UploadFile] = File(...),
+    provider: str = Form("gemini-vertex"),
+    consent: bool = Form(False),
+):
+    """Create an untrusted canonical draft from consented text sources."""
+    if not consent:
+        return JSONResponse(
+            {"error": "explicit consent is required before sending source data"},
+            status_code=400,
+        )
+    try:
+        sources = await _read_conversion_sources(files)
+        result = convert_source_bundle(
+            sources,
+            provider=provider,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except ConnectionError as exc:
+        return JSONResponse(
+            {"error": "AI provider unavailable", "detail": str(exc)},
+            status_code=502,
+        )
+    return result
 
 
 @app.post("/replan")

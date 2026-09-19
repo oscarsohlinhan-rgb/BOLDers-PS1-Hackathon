@@ -1,4 +1,4 @@
-"""AI explainer: structured evidence explanation via DeepSeek or fallback.
+"""AI explainer: structured evidence explanation via Vertex Gemini or fallback.
 
 Read-only — no tools, no side effects. The deterministic validator
 alone decides feasibility; any AI output is informational only.
@@ -26,7 +26,7 @@ _SUFFIX = (
 
 def explain_evidence(
     evidence: Dict[str, Any],
-    api_key: Optional[str] = None,
+    use_ai: bool = False,
     transport: Optional[Callable[[str], str]] = None,
 ) -> Dict[str, Any]:
     """Explain validation evidence.
@@ -35,9 +35,8 @@ def explain_evidence(
     ----------
     evidence:
         Structured dict with ``evidence_id`` and ``errors`` list.
-    api_key:
-        DeepSeek API key.  When *None* (or empty), AI is disabled and a
-        deterministic fallback is returned without calling *transport*.
+    use_ai:
+        Explicit consent flag. When false, a deterministic fallback is returned.
     transport:
         Callable that accepts a single JSON prompt string and returns the
         model's text response.  The *api_key* is never passed to or
@@ -45,10 +44,10 @@ def explain_evidence(
 
     Returns
     -------
-    dict with ``provider`` (``"disabled"`` | ``"deepseek"`` | ``"fallback"``)
+    dict with ``provider`` (``"disabled"`` | ``"gemini-vertex"`` | ``"fallback"``)
     and ``explanation`` (str).
     """
-    if not api_key:
+    if not use_ai:
         return {
             "provider": "disabled",
             "evidence_id": evidence.get("evidence_id"),
@@ -56,7 +55,7 @@ def explain_evidence(
         }
 
     if transport is None:
-        transport = deepseek_transport(api_key)
+        transport = vertex_gemini_transport()
 
     prompt = json.dumps({"evidence": evidence}, sort_keys=True)
 
@@ -70,7 +69,7 @@ def explain_evidence(
         }
 
     return {
-        "provider": "deepseek",
+        "provider": "gemini-vertex",
         "evidence_id": evidence.get("evidence_id"),
         "explanation": text.strip() + _SUFFIX,
     }
@@ -88,43 +87,33 @@ def _deterministic_fallback(evidence: Dict[str, Any]) -> str:
 
 # ---------------------------------------------------------------- transport
 
-def deepseek_transport(api_key: str, model: Optional[str] = None) -> Callable[[str], str]:
-    """Return a stdlib-only transport that calls DeepSeek via HTTPS.
-
-    Uses only :mod:`urllib.request` — no third-party dependencies.
-    The *api_key* is used only for the ``Authorization`` header and is
-    never included in the prompt text or logs.
-    """
-    import urllib.request
-    import urllib.error
-
-    _model = model or os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
+def vertex_gemini_transport(model: Optional[str] = None) -> Callable[[str], str]:
+    """Return a Vertex Gemini transport authenticated with ADC."""
+    selected_model = model or os.environ.get("VERTEX_GEMINI_MODEL", "gemini-2.5-flash")
 
     def _call(prompt: str) -> str:
-        body = json.dumps({
-            "model": _model,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_INSTRUCTION},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": 500,
-        }).encode("utf-8")
-
-        req = urllib.request.Request(
-            "https://api.deepseek.com/chat/completions",
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="POST",
-        )
-
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            return data["choices"][0]["message"]["content"]
-        except (urllib.error.URLError, KeyError, json.JSONDecodeError) as exc:
-            raise ConnectionError(f"DeepSeek request failed: {exc}") from exc
+            from google import genai
+            from google.genai.types import GenerateContentConfig, HttpOptions
+            client = genai.Client(
+                vertexai=True,
+                project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+                location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
+                http_options=HttpOptions(api_version="v1"),
+            )
+            response = client.models.generate_content(
+                model=selected_model,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    system_instruction=_SYSTEM_INSTRUCTION,
+                    temperature=0,
+                    max_output_tokens=500,
+                ),
+            )
+            if not response.text:
+                raise ValueError("empty model response")
+            return response.text
+        except Exception as exc:
+            raise ConnectionError(f"Vertex Gemini request failed: {exc}") from exc
 
     return _call
