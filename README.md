@@ -120,14 +120,20 @@ Verified Google Cloud deployment (19 September 2026, current revision):
 
 - Judge web app: `https://ps1-web-243124675970.asia-southeast1.run.app`
 - API: `https://ps1-api-243124675970.asia-southeast1.run.app`
+- Revisions: API `ps1-api-00004-fcb`; web `ps1-web-00007-46v`; each serves
+  100 percent of traffic.
 - Public smoke evidence: `/health` returned `{"ok":true}`; multipart `/validate`
   passed with evidence `SCHEMA-77e3579d6038a895`; Scenario A `/solve` passed the
   independent validator with zero hard violations and returned exactly 192
-  access rows, 928 occupancy rows, 14 result rows, and all three CSV files.
-- Browser smoke evidence for the initial deployment: the public pack loaded 8/8
-  files and the rendered UI reported `FEASIBLE · 0 hard violations` with
-  Scenario A score 32.2. The current judge-facing flow requires the user to
-  select all eight CSVs directly; it does not preload or fetch a sample dataset.
+  access rows, 928 occupancy rows, 14 result rows, and all three CSV files. Its
+  score was 1712.2 with 43 remaining soft warnings under the stricter
+  cross-contract closure rule.
+- Public `POST /plan-days` returned `tao-dayplan/1` suggestions across 29 weeks
+  for that generated schedule while preserving a fixed user pick. Installed
+  Chrome completed the public 8/8-file solve, results, recovery/explainer and
+  consent-gated conversion journey. The root judge URL redirects to `/mockup`.
+- The current judge-facing flow requires the user to select all eight CSVs
+  directly; it does not preload or fetch a sample dataset.
 
 ## Fallback deploy (Railway, one project, two services)
 
@@ -161,8 +167,7 @@ Verified Google Cloud deployment (19 September 2026, current revision):
   both values. AI has no authority to reinterpret it. Cross-possession buffer
   semantics remain a separate spatial rule and never reduce an individual
   job's stated slot time.
-- Evidence rule from the official sample (feasible, 0 violations): mix limits
-  apply **per possession** (location, week, co-share group). Capacity counts distinct
+- Mix limits apply **per possession** (location, week, co-share group). Capacity counts distinct
   possession groups vs `LOCATION_SUPPLY` (A: zero tolerance, C: +1 soft,
   B: soft only). `access_night` is local per contract+type+week.
 - Sector expansion is unchanged. For non-Live work, deterministic concurrency
@@ -173,21 +178,25 @@ Verified Google Cloud deployment (19 September 2026, current revision):
   possession and exempt at that shared footprint. Concurrent actual footprint
   overlap between distinct possessions is hard `closure`; concurrent actual
   footprint entering another possession's exclusion-only buffer is hard `buffer`.
-  Buffer-vs-buffer overlap stays a `buffer_note` warning (shared empty clearance).
-  Cross-contract/type apparent overlaps without provable simultaneity stay
-  warnings. Live opposite-bound and H01/H02 interchange mirrors stay hard.
-  The official sample remains zero hard under this rule. Solver `State.test`
-  agrees with the independent validator. Do not call this proven
-  reference-validator behaviour; obtain the official validator or organiser
-  ruling. Solver repair still minimizes warning count as a hedge.
+  Different contracts have no comparable local access-night axis, so any
+  same-week actual-footprint overlap between them is a hard `closure` unless
+  the exact shared location/week/co-share tuple is exempt. Buffer-vs-buffer and
+  buffer-only cross-contract ambiguity stay `buffer_note` warnings. Live
+  opposite-bound and H01/H02 interchange mirrors stay hard. The supplied sample
+  contains 50 cross-contract closures under this stricter rule and is therefore
+  no longer treated as validator ground truth. Solver `State.test` agrees with
+  the independent validator and minimizes remaining warning count as a hedge.
 - Open organiser questions: official validator + `trackaccess` helper absent;
   submission says GitHub here vs GitLab in PS1 README; buffer semantics pending
   official confirmation.
 
 ## Status
 
-Scenario A/B/C all feasible on the public pack, 0 hard violations
-(A 32.2 / B 72.0 / C 32.2). Sample regression 192/928/14 rows reproduced.
+Scenario A/B/C all feasible on the public pack with 0 hard violations under the
+stricter cross-contract closure rule (A 1712.2 / B 30 / C 1712.2 in the local
+10-second verification run). The sample's 192/928/14 row counts are reproduced,
+but its 50 cross-contract closure conflicts are now reported rather than
+downgraded to warnings.
 The disruption-replan panel was removed from the product UI to avoid operator
 confusion; the backend endpoint is retained. There is no generative AI
   in the feasibility or CSV path. The backend now includes a deterministic schema

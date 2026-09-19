@@ -6,11 +6,14 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
 @ `966c976`. This folder (`ps1-app/`) is our solver + validator + web app.
 
 ## State: math core + deterministic pipeline/replan DONE and verified
-- Google Cloud deployment is live from commit `84eb860`: judge URL
+- Google Cloud deployment is live: judge URL
   `https://ps1-web-243124675970.asia-southeast1.run.app`, API URL
   `https://ps1-api-243124675970.asia-southeast1.run.app`. Public health,
   multipart validate, Scenario A solve, 8/8 sample loading, and the rendered
   feasible result/download UI were smoke-tested successfully on 19 Sep 2026.
+  Current revisions are API `ps1-api-00004-fcb` and web `ps1-web-00007-46v`,
+  each at 100 percent traffic. The live release includes `POST /plan-days` and
+  the day/week planning UI.
 - `api/model.py` — parses 8 CSVs, week math, expansion (tunnel+platform walk),
   buffers, Live mirrors, predecessor DAG. Single shared primitive so solver,
   validator, exporter can never disagree on expansion.
@@ -25,7 +28,8 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
   (last day of last access week — verified vs sample), §2.5 scores.
 - `api/main.py` — FastAPI: `GET /health`, `POST /validate`, `POST /solve`
   (8 files + scenario + time_budget), `POST /replan` (same files + one narrow
-  disruption command), and `POST /ai/explain` (structured evidence only).
+  disruption command), `POST /plan-days` (the eight inputs plus generated
+  access/occupancy schedules), and `POST /ai/explain` (structured evidence only).
   Run from repo root: `python3 -m uvicorn api.main:app`.
 - `api/pipeline.py` — deterministic schema and relationship checks, stable
   evidence IDs, solve orchestration, independent-validator release gate, and
@@ -47,9 +51,12 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
   Live-mirror, buffer-warning, malformed schedule, and AI-boundary mutations.
 
 ## Verified numbers (public pack)
-- Sample regression: 192/928/14 rows, 0 violations, overruns 14/7/7. ✓
-- Our solve A: 0 violations, score 32.2, overrun 28d. B: 0 viol, zero overrun
-  (excess 6 + ECLO 6 = 72). C: 0 viol, 32.2, no excess spent. ✓
+- Sample regression: 192/928/14 rows and overruns 14/7/7 reproduced; the stricter
+  validator now reports its 50 cross-contract closure conflicts instead of
+  treating the sample as feasibility ground truth. ✓
+- Our 10-second solves: A 0 violations, score 1712.2, overrun 42d; B 0
+  violations, score 30, zero overrun; C 0 violations, score 1712.2, overrun
+  42d. ✓
 - Mutations caught: dropped access (workload), A013-before-A012 (precedence),
   ECLO-in-A. ✓  Full stack (page 200 → rewrite → feasible) tested locally. ✓
 
@@ -64,11 +71,12 @@ Deadline 19 Sep 16:00 SGT. Repo: `aochinwen/NebulaX-Hackathon-ProblemStatement`
 - Mix limits apply PER POSSESSION (location, week, co-share group), not per
   location-week. Capacity counts distinct groups vs LOCATION_SUPPLY
   (A: zero tolerance, C: +1 soft, B: soft only).
-- **HIGH RISK:** literal buffer expansion finds 12 cross-possession overlaps in
-  the published zero-violation sample, so the app treats them as warnings and
-  hard-blocks Live mirrors only. However, §2.4 explicitly calls buffers rigid
-  and says they never overlap. Do not call this settled until the reference
-  validator or organiser confirms the intended expansion/semantics.
+- Different contracts have no comparable local access-night axis. A same-week
+  actual-footprint overlap across contracts is therefore a hard closure unless
+  the exact location/week/co-share tuple is exempt. The external-validator
+  evidence takes precedence over the sample's claimed feasibility; the sample
+  contains 50 such conflicts. Pure buffer-vs-buffer and buffer-only ambiguity
+  remain warnings pending organiser confirmation of §2.4 semantics.
 - `access_night` is local per contract+type+week. One access per activity
   per week. Predecessor = strictly later week. RESULTS overrun = max activity
   overrun per contract. Activity nudge applies per overrunning activity.

@@ -135,8 +135,10 @@ class State:
         # (contract_number, activity_type, week, access_night); exact
         # same (location_id, week, co_share_group) is exempt at that
         # footprint; concurrent actual overlap is closure; concurrent
-        # actual into exclusion-only buffer is buffer; buffer-vs-buffer
-        # and cross-contract/type overlaps stay warnings.
+        # actual into exclusion-only buffer is buffer; cross-contract
+        # same-week actual overlap is closure because local night numbers
+        # are not comparable across contracts; buffer-only and
+        # same-contract/different-type ambiguity stays warning-level.
         for s in self.slots:
             if s.week != week:
                 continue
@@ -144,6 +146,9 @@ class State:
             mirror_hit = ((Mr & (s.foot | s.buf | s.mir)) |
                           ((B | F) & s.mir)) - exempt
             if mirror_hit:
+                return False
+            if (s.contract != a.contract and
+                    ((F & s.foot) - exempt)):
                 return False
             concurrent = (s.contract == a.contract
                           and s.activity_type == a.atype

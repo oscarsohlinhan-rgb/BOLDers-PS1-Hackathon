@@ -38,12 +38,12 @@ You are continuing Project TAO, the BOLDers PS1 Track Access Optimiser for NEBUL
 
 - A job's stated duration is all-in occupation time. Exact equality fits: 120 minutes fits 120 minutes; four hours fits four hours. Reject only when duration exceeds the slot or another explicit rule fails. Never add generic setup/paperwork/safety padding or shrink the slot.
 - `access_night` concurrency is local per contract + activity type + week.
-- Current evidence-grounded buffer interpretation: non-Live hard conflicts require proven concurrency on the same local key; actual-vs-actual is hard closure, actual-vs-exclusion-only is hard buffer, exact co-share tuples are exempt, pure buffer-vs-buffer and cross-contract ambiguity are warnings, and Live mirrors remain hard. This reconciles the supplied sample but remains a hidden-validator risk until organiser confirmation.
+- Cross-contract closure rule: different contracts have no comparable local access-night axis, so a same-week actual-footprint overlap is a hard closure unless the exact location/week/co-share tuple is exempt. Same-key concurrent actual-vs-actual remains hard closure, concurrent actual-vs-exclusion-only remains hard buffer, pure buffer-vs-buffer and buffer-only ambiguity remain warnings, and Live mirrors remain hard. The supplied sample contains 50 such cross-contract closures and is no longer treated as validator ground truth.
 - AI never decides feasibility, scheduling, approval or export. Deterministic code remains authoritative.
 
 ## Verification completed locally
 
-- `cd web && npm test` — 55 tests passed.
+- `cd web && npm test` — 79 tests passed.
 - `cd web && npx tsc --noEmit` — passed.
 - `cd web && npm run build` — passed.
 - `python3 -m unittest api.tests.test_ai_converter` — 7 tests passed.
@@ -52,20 +52,24 @@ You are continuing Project TAO, the BOLDers PS1 Track Access Optimiser for NEBUL
 - `bash -n scripts/deploy_google_cloud.sh` — passed.
 - Brain consistency check passed with 1,762 notes at completion time.
 
-## Working tree and deployment boundaries
+## Repository and deployment state
 
-- The Desktop repository has many modified and untracked files from the current verified local candidate. Treat them all as intentional user work.
 - Shared remote: `https://github.com/oscarsohlinhan-rgb/BOLDers-PS1-Hackathon.git`, branch `main`.
-- The public Cloud Run deployment is an older verified revision. Do not claim the current Gemini/manual-mapping/settings revision is deployed.
-- Do not push or deploy until Lin reviews the localhost candidate and explicitly approves it.
+- The public Cloud Run deployment includes the Python weekday-planning engine,
+  `POST /plan-days`, the day/week planning UI, and the stricter cross-contract
+  closure validator. API `ps1-api-00004-fcb` and web `ps1-web-00007-46v` each
+  serve 100 percent of traffic.
+- Public verification covered `/health`, eight-file schema validation, Scenario
+  A solve/export, the `tao-dayplan/1` endpoint and the installed-Chrome product
+  journey.
 
 ## First action in OpenCode
 
-Read the files and verify the status above without changing code. Then tell Lin:
+Read the files and verify the status above before changing code. Then tell Lin:
 
 1. you have loaded the handover;
 2. the exact repository and local URLs you are using;
-3. that no deployment or push will occur without approval; and
+3. the current Cloud Run revisions and Git commit; and
 4. the next requested change you are ready to perform.
 
 Do not independently start the optional Gantt refinement; it was identified as a recommendation, not yet ordered.

@@ -405,7 +405,7 @@ def run(check):
     loc_b = "SEC:ALP:S02_S03:EB"
     loc_c = "SEC:ALP:S03_S04:EB"
 
-    def _sample_zero_hard():
+    def _sample_hard():
         import csv as _csv
         sample = "/tmp/PS1-latest/03_submission_sample"
         acc = {}
@@ -423,9 +423,10 @@ def run(check):
                      row["location_id"])] = row["co_share_group"]
         return V.validate(base, acc, grp, "A")
 
-    check("boundary-official-sample-zero-hard",
-          not _sample_zero_hard(),
-          str(_sample_zero_hard()[:2]))
+    sample_hard = _sample_hard()
+    check("boundary-official-sample-cross-contract-closures-caught",
+          "closure" in _rules(sample_hard),
+          str(sample_hard[:2]))
 
     # Concurrent actual footprint overlap between distinct possessions
     # is hard closure.
@@ -494,8 +495,9 @@ def run(check):
           str(V.warnings(diffnight_inst, diffnight_acc, diffnight_grp,
                          "A")))
 
-    # Equal numeric access_night across different contract/type keys is
-    # not a global night and must not create a hard failure.
+    # Different contracts do not share a comparable local access-night
+    # coordinate. A same-week actual footprint collision therefore cannot be
+    # proven safe and must be rejected as a closure conflict.
     cross_inst = _instance_with(
         base, [_activity("X1", "C001", loc_a),
                _activity("X2", "C002", loc_b)])
@@ -504,14 +506,30 @@ def run(check):
         cross_inst, cross_acc,
         lambda aid, _week: "g-x1" if aid == "X1" else "g-x2")
     cross_hard = V.validate(cross_inst, cross_acc, cross_grp, "A")
-    check("boundary-cross-contract-same-night-not-hard",
-          "closure" not in _rules(cross_hard) and
-          "buffer" not in _rules(cross_hard),
+    check("boundary-cross-contract-actual-overlap-hard",
+          "closure" in _rules(cross_hard),
           str(cross_hard))
-    check("boundary-cross-contract-same-night-warned",
-          "buffer_note" in _rules(V.warnings(
+    check("boundary-cross-contract-actual-overlap-not-warning",
+          "buffer_note" not in _rules(V.warnings(
               cross_inst, cross_acc, cross_grp, "A")),
-          "cross-contract warning missing")
+          "cross-contract closure was also emitted as a warning")
+
+    # Regression for the external-validator error pair reported from the PS1
+    # data. A025 (C004) and A028 (C005) share PLAT:ALP:S03:EB; putting them in
+    # the same week with distinct possession groups is a hard closure.
+    reported_inst = _instance_with(
+        base, [base.activities["A025"], base.activities["A028"]])
+    reported_acc = {"A025": [(12, 1, 0)], "A028": [(12, 1, 0)]}
+    reported_grp = _groups(
+        reported_inst, reported_acc,
+        lambda aid, _week: "g-a025" if aid == "A025" else "g-a028")
+    reported_hard = V.validate(
+        reported_inst, reported_acc, reported_grp, "A")
+    check("boundary-reported-a025-a028-cross-contract-closure-hard",
+          any(v["rule"] == "closure" and
+              set(v["aids"]) == {"A025", "A028"}
+              for v in reported_hard),
+          str(reported_hard))
 
     # Exact same (location_id, week, co_share_group) is one co-shared
     # possession and exempt at that shared footprint.
@@ -551,11 +569,11 @@ def run(check):
     check("boundary-solver-accepts-different-nights",
           st_accept_night.test("D2", 1, 2, "g-d2"),
           "solver rejected different local nights")
-    st_accept_cross = S.State(cross_inst, "A")
-    st_accept_cross.place("X1", 1, 1, "g-x1", 0)
-    check("boundary-solver-accepts-cross-contract-same-night",
-          st_accept_cross.test("X2", 1, 1, "g-x2"),
-          "solver rejected cross-contract same night number")
+    st_reject_cross = S.State(cross_inst, "A")
+    st_reject_cross.place("X1", 1, 1, "g-x1", 0)
+    check("boundary-solver-rejects-cross-contract-closure",
+          not st_reject_cross.test("X2", 1, 1, "g-x2"),
+          "solver accepted a cross-contract closure")
     st_accept_bufbuf = S.State(bufbuf_inst, "A")
     st_accept_bufbuf.place("Q1", 1, 1, "g-q1", 0)
     check("boundary-solver-accepts-buffer-buffer",

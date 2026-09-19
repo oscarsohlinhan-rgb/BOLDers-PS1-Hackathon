@@ -56,7 +56,11 @@ def main():
           n_acc == 192 and n_occ == 928 and n_res == 14,
           f"({n_acc}/{n_occ}/{n_res})")
     viol = V.validate(inst, s_acc, s_grp, "A")
-    check("sample-zero-violations", not viol,
+    sample_closures = [v for v in viol if v["rule"] == "closure"]
+    check("sample-cross-contract-closures-caught",
+          bool(sample_closures) and all(
+              len({inst.activities[aid].contract for aid in v["aids"]}) > 1
+              for v in sample_closures),
           str([v["detail"] for v in viol][:3]))
     expect_over = {"C006": 14, "C010": 7, "C014": 7}
     ok = True
@@ -73,6 +77,8 @@ def main():
     wl = [v for v in hard if v["rule"] == "workload"]
     check("solverA-workload-complete", not wl,
           str([v["detail"] for v in wl][:2]))
+    check("solverA-zero-hard-violations", not hard,
+          str([v["detail"] for v in hard][:3]))
     print("solverA violations:", len(hard),
           "| score:", rep["soft_scores"]["objective_score"],
           "| overrun:", rep["soft_scores"]["overrun_days_total"])

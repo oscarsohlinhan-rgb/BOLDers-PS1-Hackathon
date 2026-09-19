@@ -4,11 +4,11 @@ Single source of truth for solver, validator and exporter so the three
 can never disagree on occupancy expansion (Codex risk #2).
 
 Assumptions (documented and shared by solver/validator/exporter):
-  A1 buffer geometry is computed for every possession. Cross-possession
-     overlaps are currently warnings because the published zero-violation
-     sample contains them under the literal expansion, despite the README
-     calling buffers hard. Live mirrors remain hard. This ambiguity must be
-     resolved against the missing reference validator.
+  A1 buffer geometry is computed for every possession. Same-week actual
+     footprint overlaps across different contracts are hard closure conflicts;
+     buffer-only ambiguity remains warning-level because the published
+     zero-violation sample contains it under the literal expansion, despite the
+     README calling buffers hard. Live mirrors remain hard.
   A2 Live mirror: a Live access blocks its mirrored footprint on the
      opposite bound plus the other line's H01_H02 tunnels and H01/H02
      platforms (all bounds) for that week. Full block, no entry.

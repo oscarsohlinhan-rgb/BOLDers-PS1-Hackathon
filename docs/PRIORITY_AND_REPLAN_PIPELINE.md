@@ -344,9 +344,11 @@ placement passes all applicable official rules:
    for the official local key (contract_number, activity_type, week,
    access_night); exact same (location_id, week, co_share_group) is exempt
    at that shared footprint; concurrent actual overlap is hard closure;
-   concurrent actual into exclusion-only buffer is hard buffer;
-   buffer-vs-buffer and cross-contract/type overlaps stay warnings; Live
-   opposite-bound and H01/H02 interchange mirrors stay hard;
+   concurrent actual into exclusion-only buffer is hard buffer; same-week
+   actual-footprint overlap across different contracts is hard closure because
+   their local night axes are not comparable; buffer-vs-buffer and buffer-only
+   ambiguity stay warnings; Live opposite-bound and H01/H02 interchange mirrors
+   stay hard;
 5. each possession uses an allowed `PM`, `PC`, and `C` mix;
 6. only activities in the same location, week, and `co_share_group` share one
    possession;
@@ -361,10 +363,11 @@ Scenario A forbids ECLO and excess supply. Scenario B forbids finishing after
 the planned completion date. Scenario C permits only its published limited
 supply flexibility. Different local nights within the same contract/type key
 are not concurrent, and equal numeric access_night across different
-contract/type keys is not a global night. The official sample remains zero
-hard under this rule. Solver `State.test` agrees with the independent
-validator. Do not call this proven reference-validator behaviour; obtain the
-official validator or organiser ruling.
+contract/type keys is not a global night. Because those local axes cannot prove
+cross-contract separation, same-week actual-footprint overlap across contracts
+is a hard closure. The supplied sample has 50 such closures under this rule and
+is no longer feasibility ground truth. Solver `State.test` agrees with the
+independent validator.
 
 **Change-as-little-as-possible replan**
 

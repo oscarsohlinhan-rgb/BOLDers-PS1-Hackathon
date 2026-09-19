@@ -146,8 +146,10 @@ def _validate_full(inst: Instance, accesses: Accesses, groups: Groups,
     # Concurrent actual overlap is hard closure; concurrent actual into
     # another possession's exclusion-only buffer is hard buffer.
     # Buffer-vs-buffer stays a buffer_note warning (shared empty
-    # clearance). Cross-contract/type apparent overlaps without provable
-    # simultaneity stay warnings. Live opposite-bound and H01/H02
+    # clearance). Different contracts have no comparable local night axis,
+    # so their same-week actual footprint overlaps are conservatively hard
+    # closure conflicts; buffer-only and same-contract/different-type
+    # ambiguity stays warning-level. Live opposite-bound and H01/H02
     # interchange mirrors stay hard week-based. R5 mixes apply per
     # POSSESSION (location, week, group).
     keys = sorted(info)
@@ -167,13 +169,18 @@ def _validate_full(inst: Instance, accesses: Accesses, groups: Groups,
                 add("mirror", [a1, a2], [w1],
                     f"wk{w1}: {a1} inside Live power-cut mirror of {a2}")
                 continue
+            closure = (s1["F"] & s2["F"]) - exempt
+            if closure and s1["contract"] != s2["contract"]:
+                add("closure", [a1, a2], [w1],
+                    f"wk{w1}: cross-contract closure overlap between "
+                    f"{a1} and {a2} at {sorted(closure)[:3]}")
+                continue
             concurrent = (
                 s1["contract"] == s2["contract"]
                 and s1["atype"] == s2["atype"]
                 and bool(s1["nights"] & s2["nights"])
             )
             if concurrent:
-                closure = (s1["F"] & s2["F"]) - exempt
                 if closure:
                     add("closure", [a1, a2], [w1],
                         f"wk{w1}: {a1} inside closure of {a2} "
