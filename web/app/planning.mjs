@@ -311,10 +311,62 @@ export const DAY_NATURE_ORDER = {
 
 export const DAY_ACCESS_ORDER = { PM: 0, PC: 1, C: 2 };
 
-const locationLine = (location) => {
-  const parts = String(location || "").split(":");
-  return parts.length > 1 ? parts[1] : "";
+export const DAY_BUFFER_RADIUS = { Live: 2, "Non-live (Consist)": 1 };
+
+/** Index 03_SECTORS rows by sector_id for buffer-halo expansion. */
+export function buildSectorIndex(sectors) {
+  const byId = new Map();
+  for (const row of sectors || []) {
+    if (!row.sector_id) continue;
+    byId.set(row.sector_id, {
+      line: row.line_code || "",
+      bound: String(row.sector_id).split(":").pop(),
+      seq: parseInt(row.seq, 10) || 0,
+    });
+  }
+  return byId;
+}
+
+const mirroredLocation = (id) => {
+  if (id.endsWith(":EB")) return id.slice(0, -3) + ":WB";
+  if (id.endsWith(":WB")) return id.slice(0, -3) + ":EB";
+  return null;
 };
+
+/**
+ * Booked locations plus the exclusion-buffer halo around them: Live reaches
+ * 2 sectors both sides (and mirrors onto the opposite bound), Non-live
+ * (Consist) reaches 1 sector, anything else stays on its booked locations.
+ * Only one work may use a halo location per night, so halo overlap means
+ * different weekdays — except co-sharers of the exact same possession, which
+ * the rules keep buffer-free against each other.
+ */
+export function bufferedFootprint(locations, nature, sectorIndex) {
+  const halo = new Set(locations || []);
+  const radius = DAY_BUFFER_RADIUS[nature] || 0;
+  if (radius > 0 && sectorIndex) {
+    for (const loc of locations || []) {
+      const info = sectorIndex.get(loc);
+      if (!info) continue;
+      for (const [id, other] of sectorIndex) {
+        if (
+          other.line === info.line &&
+          other.bound === info.bound &&
+          Math.abs(other.seq - info.seq) <= radius
+        ) {
+          halo.add(id);
+        }
+      }
+    }
+  }
+  if (nature === "Live") {
+    for (const loc of [...halo]) {
+      const mirror = mirroredLocation(loc);
+      if (mirror) halo.add(mirror);
+    }
+  }
+  return halo;
+}
 
 const possessionOf = (item, location) => {
   const group =
@@ -330,11 +382,12 @@ const possessionOf = (item, location) => {
  * rules run together:
  * - Same (location, co_share_group) in a week = one possession = one night,
  *   so those activities share the recommended weekday.
- * - Same location under different possessions = separate nights (rule 6:
- *   buffers apply normally between them), so those activities are placed on
- *   different weekdays. PM sole possessions separate the same way.
- * - Two Live activities touching the same line close each other's sectors
- *   (mirroring + interchange crossover), so they are separated by weekday.
+ * - Only one work per location including its exclusion-buffer halo may run
+ *   per night: each activity's booked locations are expanded by its nature
+ *   (Live 2 sectors both sides plus opposite-bound mirroring, Non-live
+ *   (Consist) 1 sector, others none, using the 03_SECTORS topology), and any
+ *   halo overlap between different possessions forces different weekdays.
+ *   PM sole possessions separate the same way.
  * - A contract's number_of_workfronts caps how many of its activities share
  *   one weekday (concurrent teams).
  * Week-level signals (predecessors, planned dates, location supply, ECLO
@@ -359,23 +412,50 @@ export function recommendWorkdays(candidates) {
   const picks = [];
   for (const item of sorted) {
     const locs = item.locations || [];
-    const lines = new Set(locs.map(locationLine).filter(Boolean));
-    const isLive = item.nature === "Live";
-    const prepared = { item, locs, lines };
-    // 1. Join an already-placed activity sharing the exact possession.
-    let join = null;
-    for (const p of placed) {
+    const booked = new Set(locs);
+    const footprint = bufferedFootprint(locs, item.nature, item.sectorIndex);
+    const prepared = { item, locs, booked, footprint };
+    const sharesPossessionWith = (other) => {
       for (const loc of locs) {
         if (
-          p.locs.includes(loc) &&
-          possessionOf(p.item, loc) === possessionOf(item, loc) &&
+          (other.locations || []).includes(loc) &&
+          possessionOf(other, loc) === possessionOf(item, loc) &&
           !possessionOf(item, loc).startsWith("@@")
         ) {
-          join = { day: p.day, other: p.item.activityId, loc };
-          break;
+          return loc;
         }
       }
-      if (join) break;
+      return null;
+    };
+    const pairClash = (entry, entryBooked, entryFootprint) => {
+      if (sharesPossessionWith(entry)) return null;
+      for (const loc of footprint) {
+        if (entryFootprint.has(loc)) {
+          return {
+            other: entry.activityId,
+            loc,
+            buffered: !(booked.has(loc) && entryBooked.has(loc)),
+          };
+        }
+      }
+      return null;
+    };
+    // 1. Join an already-placed activity sharing the exact possession —
+    // but only when nothing else on that day clashes with this item.
+    let join = null;
+    for (const p of placed) {
+      const loc = sharesPossessionWith(p.item);
+      if (!loc) continue;
+      const blocked = placed.some(
+        (other) =>
+          other.day === p.day &&
+          other.item.activityId !== p.item.activityId &&
+          pairClash(other.item, other.booked, other.footprint) !== null,
+      );
+      if (!blocked) {
+        join = { day: p.day, other: p.item.activityId, loc };
+        break;
+      }
     }
     const conflictsOn = (day) => {
       let sameContract = 0;
@@ -387,20 +467,8 @@ export function recommendWorkdays(candidates) {
         ) {
           sameContract += 1;
         }
-        for (const loc of locs) {
-          if (
-            p.locs.includes(loc) &&
-            possessionOf(p.item, loc) !== possessionOf(item, loc)
-          ) {
-            return { other: p.item.activityId, loc };
-          }
-        }
-        if (isLive && p.item.nature === "Live") {
-          const shared = [...lines].filter((line) => p.lines.has(line));
-          if (shared.length) {
-            return { other: p.item.activityId, loc: `${shared[0]} line` };
-          }
-        }
+        const hit = pairClash(p.item, p.booked, p.footprint);
+        if (hit) return hit;
       }
       const cap = Number(item.workfronts) || 99;
       if (sameContract >= cap) {
@@ -451,7 +519,9 @@ export function recommendWorkdays(candidates) {
       key: item.key,
       day: chosen,
       reason: blocker
-        ? `Clear of ${blocker.other} at ${blocker.loc}`
+        ? blocker.buffered
+          ? `Buffer overlap with ${blocker.other} at ${blocker.loc}`
+          : `Clear of ${blocker.other} at ${blocker.loc}`
         : "First clear day",
     });
   }

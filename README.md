@@ -20,9 +20,18 @@ Private team collaboration repository:
   policy. No dataset is preloaded or offered as a sample shortcut. Proxies
   `/api/*` to the backend.
 - `api/replanner.py` — narrow deterministic disruption parser and minimal-churn
-  repair. Unaffected activities remain locked; only the independent validator
-  can release replanned CSVs. The explainer is templated and never establishes
-  feasibility.
+  repair kept as a backend endpoint only; the product UI no longer exposes a
+  replan panel. Unaffected activities remain locked; only the independent
+  validator can release replanned CSVs. The explainer is templated and never
+  establishes feasibility.
+- `api/dayplan.py` — advisory weekday planner running in the solver's own
+  engine (`POST /api/plan-days`): contract priority, Live buffers plus
+  opposite-bound mirroring, sole/shared possession rules, co-share groups,
+  and workfront caps place each scheduled night on Mon–Sun with per-pick
+  reasons. User picks are always preserved. Output is a planning overlay
+  only: never validated, never scored, never written into canonical or
+  submission files. The browser keeps a deterministic local fallback for
+  offline use.
 - `api/pipeline.py` — deterministic eight-file schema gate, stable evidence
   IDs, solver orchestration, independent-validator release gate, and exact CSV
   release only for feasible candidates.
@@ -107,7 +116,7 @@ No provider key is deployed. Gemini uses the Cloud Run service identity. The
 temporary `.env.production` generated during the web build contains only the
 public API service URL and is deleted when the script exits.
 
-Verified Google Cloud deployment (19 September 2026, source commit `84eb860`):
+Verified Google Cloud deployment (19 September 2026, current revision):
 
 - Judge web app: `https://ps1-web-243124675970.asia-southeast1.run.app`
 - API: `https://ps1-api-243124675970.asia-southeast1.run.app`
@@ -179,13 +188,15 @@ Verified Google Cloud deployment (19 September 2026, source commit `84eb860`):
 
 Scenario A/B/C all feasible on the public pack, 0 hard violations
 (A 32.2 / B 72.0 / C 32.2). Sample regression 192/928/14 rows reproduced.
-P6 stretch is implemented as a narrow deterministic command box (`block … in
-week …` / `delay … by … weeks`), minimal-churn dependency repair, templated
-before/after explanation and validator-gated export. There is no generative AI
+The disruption-replan panel was removed from the product UI to avoid operator
+confusion; the backend endpoint is retained. There is no generative AI
   in the feasibility or CSV path. The backend now includes a deterministic schema
-  gate and an optional Vertex Gemini evidence explainer. Google Cloud
-  deployment is verified for the earlier revision; the new Gemini-enabled
-  revision remains local until UI review. Manual filename mapping, the
-  consent-gated mixed-text-format repair adapter, and the Settings UI are
-  implemented locally. Roadblock persistence and broader assistance panels
-  remain pending.
+  gate and an optional Vertex Gemini evidence explainer. The workspace shows a
+  day view (one focused week, weekday planning with user picks plus
+  engine-suggested workdays and reasons, sidecar CSV export) beside the
+  30-week overview, ECLO half-dot markers, overlap badges (sole use vs
+  shareable), and a reason panel instead of empty grids when a policy is
+  infeasible. Manual filename mapping, the consent-gated mixed-text-format
+  repair adapter, and the Settings UI are implemented. Google Cloud Run hosts
+  the current revision (see below); the qwiklabs project hosting it expires
+  with the lab.

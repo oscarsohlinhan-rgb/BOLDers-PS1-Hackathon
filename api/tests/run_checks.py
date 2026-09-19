@@ -311,6 +311,9 @@ def main():
     from api.tests.boundary_checks import run as run_boundary_checks
     run_boundary_checks(check)
 
+    from api.tests.dayplan_checks import run as run_dayplan_checks
+    run_dayplan_checks(check)
+
     print("FAILURES:", fails if fails else "none")
     sys.exit(1 if fails else 0)
 

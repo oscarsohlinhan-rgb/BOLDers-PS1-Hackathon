@@ -22,10 +22,11 @@ test('one-shot dataset removal clears files, drafts, results and validation', ()
   assert.match(mockup, /setNeedsAiRepair\(false\)/);
 });
 
-test('the schedule offers day and week presentations in an adaptive widget grid', () => {
+test('the schedule always shows day and week presentations in an adaptive widget grid', () => {
   assert.match(mockup, /By day/);
   assert.match(mockup, /By week/);
-  assert.match(mockup, /scheduleViews/);
+  assert.doesNotMatch(mockup, /scheduleViews/);
+  assert.doesNotMatch(mockup, /toggleScheduleView/);
   assert.match(mockup, /ScheduleDayGrid/);
   assert.match(mockup, /focusedWeek/);
   assert.match(mockup, /Previous week/);
@@ -98,6 +99,30 @@ test('unplanned nights can be auto-suggested from job-type rules without touchin
   assert.match(mockup, /agendaNoteSuggested/);
   assert.match(mockup, /noteSource/);
   assert.match(mockup, /source,basis/);
+});
+
+test('suggestions come from the cloud Python engine with a local fallback', () => {
+  assert.match(mockup, /\/api\/plan-days/);
+  assert.match(mockup, /suggestWorkdaysLocal/);
+  assert.match(mockup, /dayEngine/);
+  assert.match(mockup, /Planned by the Python engine on the Cloud API/);
+  assert.match(mockup, /Planned locally/);
+});
+
+test('each access renders as one day: only weeks with accesses are highlighted', () => {
+  assert.match(mockup, /const hasWork = accesses\.length > 0/);
+  assert.match(mockup, /Each dot is one day of work/);
+});
+
+test('day rows state whether each job can share track or needs sole use', () => {
+  assert.match(mockup, /overlapInfo/);
+  assert.match(mockup, /overlapBadge/);
+  assert.match(mockup, /Sole use/);
+  assert.match(mockup, /Shareable/);
+  assert.match(mockup, /contracts={contractMap}/);
+  assert.match(css, /\.overlapBadge/);
+  assert.match(css, /\.overlapSole/);
+  assert.match(css, /\.overlapShare/);
 });
 
 test('selecting a week highlights its work across every widget', () => {

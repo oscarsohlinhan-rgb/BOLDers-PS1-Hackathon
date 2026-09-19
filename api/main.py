@@ -202,3 +202,33 @@ async def replan(disruption: str = Form(...),
                 "RESULTS.csv": _csv_text(r_rows),
             }
         return payload
+
+
+@app.post("/plan-days")
+async def plan_days(strategy: str = Form("spread"),
+                    fixed: str = Form("{}"),
+                    files: list[UploadFile] = File(...)):
+    """Suggest weekdays per scheduled night in the solver's own engine.
+
+    Advisory only: preferred weekdays are a planning overlay. They are
+    never validated, never scored, and never written into canonical or
+    submission files. User fixed picks are always preserved.
+    """
+    from api import dayplan as D
+    try:
+        bundle = await _read_bundle(files)
+    except ValueError as exc:
+        return JSONResponse({"status": "rejected_input",
+                             "error": {"code": "upload_error",
+                                       "detail": str(exc)}},
+                            status_code=400)
+    try:
+        fixed_map = json.loads(fixed or "{}")
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return JSONResponse({"status": "rejected_input",
+                             "error": {"code": "bad_fixed",
+                                       "detail": "fixed must be JSON"}},
+                            status_code=400)
+    result = D.plan_weekdays(bundle, fixed_map, strategy)
+    return JSONResponse(
+        result, status_code=200 if result["status"] == "ok" else 400)

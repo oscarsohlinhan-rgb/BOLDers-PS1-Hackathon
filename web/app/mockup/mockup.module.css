@@ -1955,6 +1955,67 @@ button.liveDayCell:hover {
   color: var(--muted);
 }
 
+.dayNotesDrop {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.dayNotesDrop details {
+  display: block;
+}
+
+.dayNotesDrop summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 15px 19px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.dayNotesDrop summary::-webkit-details-marker {
+  display: none;
+}
+
+.dayNotesDrop summary strong {
+  color: var(--midnight);
+  font-family: Georgia, serif;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.dayNotesDrop summary strong::after {
+  content: " ▾";
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dayNotesDrop details[open] summary strong::after {
+  content: " ▴";
+}
+
+.dayNotesDrop summary span {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.dayNotesDrop summary + .dayNotesHead {
+  margin: 0 19px 10px;
+}
+
+.dayNotesDrop .dayNotesList {
+  margin: 0 19px;
+}
+
+.dayNotesDrop .dayNotesFootnote {
+  margin: 10px 19px 16px;
+}
+
 .daySuggestRow {
   display: flex;
   align-items: center;
@@ -1979,6 +2040,29 @@ button.liveDayCell:hover {
   border: 1px dashed var(--burgundy);
   background: var(--coral-soft);
   color: var(--burgundy);
+}
+
+.overlapBadge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.overlapSole {
+  border: 1px solid var(--burgundy);
+  background: var(--coral-soft);
+  color: var(--burgundy);
+}
+
+.overlapShare {
+  border: 1px solid var(--moss);
+  background: var(--teal-soft);
+  color: var(--moss);
 }
 
 .noteSource {
@@ -2394,34 +2478,6 @@ button.dayCell:focus-visible,
 .liveSelection > div { display: flex; flex-wrap: wrap; gap: 5px; }
 .liveSelection code { padding: 3px 6px; border-radius: 6px; background: var(--champagne-pale); color: var(--umber); font-size: 9.5px; }
 
-.replanPanel {
-  margin-top: 22px;
-  padding: 22px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.replanEyebrow {
-  display: block;
-  margin-bottom: 3px;
-  color: var(--burgundy);
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
-.replanCommand {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.replanCommand label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; }
-.replanCommand input,
 .recoveryKey input {
   width: 100%;
   padding: 10px 12px;
@@ -2431,17 +2487,6 @@ button.dayCell:focus-visible,
   color: var(--ink);
   font: inherit;
 }
-
-.replanExamples { margin: 8px 0 0; color: var(--muted); font-size: 10.5px; }
-.replanResult { display: grid; gap: 12px; margin-top: 16px; }
-.replanResult .gatePassed p,
-.replanResult .gateFailed p { margin: 3px 0 0; }
-.replanNoChange { margin: 0; color: var(--muted); font-size: 12px; }
-.replanDetails { padding: 13px 15px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface2); }
-.replanDetails h3 { margin: 0 0 8px; color: var(--midnight); font-size: 11px; }
-.replanDetails ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.replanDetails li { display: grid; grid-template-columns: minmax(90px, auto) 1fr; gap: 10px; color: var(--muted); font-size: 11px; }
-.replanViolations { border-color: rgba(123, 48, 55, 0.3); background: var(--coral-soft); }
 
 .workspaceHead {
   display: flex;
@@ -3208,8 +3253,6 @@ button.dayCell:focus-visible,
   .runControls { align-items: stretch; }
   .runControls label { width: 100%; }
   .runControls > button { width: 100%; }
-  .replanCommand { grid-template-columns: 1fr; }
-  .replanCommand > button { width: 100%; }
   .aiConversion { padding: 17px; }
   .aiConversionHead { align-items: flex-start; }
   .aiDraftMeta { grid-template-columns: 1fr; }

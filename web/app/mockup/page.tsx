@@ -9,8 +9,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { strToU8, zipSync } from 'fflate';
 import { EXPECTED, assignFileToCanonicalSlot, classifyDroppedFiles } from '../intake.mjs';
-import { buildPlanningModel, formatWeekStart, parseCsv, recommendWorkdays, selectBestPolicy } from '../planning.mjs';
-import { explainEvidence, runPipeline, runReplan } from './live-pipeline.mjs';
+import { buildPlanningModel, buildSectorIndex, formatWeekStart, parseCsv, recommendWorkdays, selectBestPolicy } from '../planning.mjs';
+import { explainEvidence, runPipeline } from './live-pipeline.mjs';
 import type { PipelineEvent } from './live-pipeline.mjs';
 import styles from './mockup.module.css';
 
@@ -24,7 +24,6 @@ type Screen = 'welcome' | 'intake' | 'processing' | 'results' | 'recovery' | 'se
 type PolicyId = 'A' | 'B' | 'C';
 type View = 'night' | 'month' | 'horizon';
 type TerminalDetail = 'standard' | 'detailed';
-type ReplanEffort = 'same' | 'extended';
 type ResultSelection = 'best' | 'policy-a';
 type RecoveryId = 'missing' | 'schema' | 'infeasible' | 'offline' | 'partial';
 const OUTPUT_FILES = ['SCHEDULE_ACCESS.csv', 'SCHEDULE_OCCUPANCY.csv', 'RESULTS.csv'] as const;
@@ -66,14 +65,6 @@ type SolveResult = {
   };
   files: Record<string, string>;
 };
-type RuleFinding = { rule: string; detail: string };
-type ReplanResult = {
-  status: string;
-  explanation: string;
-  changes: Array<{ activity_id: string; before_weeks: number[]; after_weeks: number[] }>;
-  validator_gate: { passed: boolean; hard_violations: RuleFinding[]; soft_warnings: RuleFinding[] };
-};
-type ReplanPayload = { schema_gate: SchemaGate; replan: ReplanResult; files: Record<string, string> | null };
 type RecoveryContext = {
   stage: 'validation' | 'optimisation' | 'connection';
   title: string;
@@ -576,13 +567,11 @@ function WelcomeOverlay({ onDone, reduced }: { onDone: () => void; reduced: bool
 }
 
 function SettingsScreen({
-  budget, onBudget, replanEffort, onReplanEffort, terminalDetail, onTerminalDetail,
+  budget, onBudget, terminalDetail, onTerminalDetail,
   resultSelection, onResultSelection, onDone,
 }: {
   budget: number;
   onBudget: (value: number) => void;
-  replanEffort: ReplanEffort;
-  onReplanEffort: (value: ReplanEffort) => void;
   terminalDetail: TerminalDetail;
   onTerminalDetail: (value: TerminalDetail) => void;
   resultSelection: ResultSelection;
@@ -595,7 +584,7 @@ function SettingsScreen({
         <div>
           <span>Workspace preferences</span>
           <h1 className={styles.screenTitle} data-heading tabIndex={-1}>Settings</h1>
-          <p className={styles.lede}>Fine-tune how Project TAO searches, replans and presents results. These controls never weaken the deterministic validator.</p>
+          <p className={styles.lede}>Fine-tune how Project TAO searches and presents results. These controls never weaken the deterministic validator.</p>
         </div>
         <button type="button" className={styles.primaryBtn} onClick={onDone}>Done</button>
       </div>
@@ -616,14 +605,6 @@ function SettingsScreen({
         </div>
       </section>
 
-      <section className={styles.settingsGroup} aria-labelledby="replan-effort-title">
-        <div className={styles.settingCopy}><span>Disruptions</span><h2 id="replan-effort-title">Replan effort</h2><p>Choose whether a disruption replan uses the normal budget or gets twice as long, capped at 60 seconds.</p></div>
-        <div className={styles.settingControl}><div className={styles.segmented} role="group" aria-label="Replan effort">
-          <button type="button" aria-pressed={replanEffort === 'same'} onClick={() => onReplanEffort('same')}><strong>Same</strong><small>{budget}s</small></button>
-          <button type="button" aria-pressed={replanEffort === 'extended'} onClick={() => onReplanEffort('extended')}><strong>Extended</strong><small>{Math.min(60, budget * 2)}s</small></button>
-        </div></div>
-      </section>
-
       <section className={styles.settingsGroup} aria-labelledby="pipeline-detail-title">
         <div className={styles.settingCopy}><span>Visibility</span><h2 id="pipeline-detail-title">Pipeline detail</h2><p>Standard shows decision checkpoints. Detailed also shows each policy starting, useful while diagnosing slow or interrupted runs.</p></div>
         <div className={styles.settingControl}><div className={styles.segmented} role="group" aria-label="Pipeline detail">
@@ -640,7 +621,7 @@ function SettingsScreen({
         </div></div>
       </section>
 
-      <div className={styles.settingsFooter}><button type="button" className={styles.ghostBtn} onClick={() => { onBudget(8); onReplanEffort('same'); onTerminalDetail('detailed'); onResultSelection('best'); }}>Restore recommended defaults</button><p>Changes apply to the next solve or replan in this browser session.</p></div>
+      <div className={styles.settingsFooter}><button type="button" className={styles.ghostBtn} onClick={() => { onBudget(8); onTerminalDetail('detailed'); onResultSelection('best'); }}>Restore recommended defaults</button><p>Changes apply to the next solve in this browser session.</p></div>
     </>
   );
 }
@@ -770,6 +751,18 @@ function AiConversionPanel({
       {error ? <p className={styles.intakeError} role="alert">{error}</p> : null}
     </section>
   );
+}
+
+function overlapInfo(accessType: string, nature: string): { label: string; tip: string; kind: 'sole' | 'share' } | null {
+  const bufferTip = nature === 'Live'
+    ? ' Carries a 2-sector exclusion buffer plus opposite-bound mirroring.'
+    : nature === 'Non-live (Consist)'
+      ? ' Carries a 1-sector exclusion buffer on both sides.'
+      : '';
+  if (accessType === 'PM') return { label: 'Sole use', kind: 'sole', tip: `Sole possession — no other work can share its track or buffer zones.${bufferTip}` };
+  if (accessType === 'PC') return { label: 'Shareable', kind: 'share', tip: `Possession master — can host co-workers in the same possession.${bufferTip}` };
+  if (accessType === 'C') return { label: 'Shareable', kind: 'share', tip: `Co-worker — can share a possession with compatible work.${bufferTip}` };
+  return null;
 }
 
 function canonicalLabel(name: string): string {
@@ -1585,89 +1578,11 @@ function ResultsScreen() {
   );
 }
 
-function ReplanPanel({ files, policy, budget }: { files: Map<string, File>; policy: PolicyId; budget: number }) {
-  const [disruption, setDisruption] = useState('delay A001 by 1 week');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [payload, setPayload] = useState<ReplanPayload | null>(null);
-
-  useEffect(() => {
-    setPayload(null);
-    setError('');
-  }, [policy]);
-
-  const submit = async () => {
-    if (!disruption.trim()) return;
-    setBusy(true);
-    setError('');
-    setPayload(null);
-    try {
-      const next = await runReplan({ files, policy, budget, disruption: disruption.trim() }) as ReplanPayload;
-      setPayload(next);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const replanResult = payload?.replan;
-  const releasedFiles = payload?.files;
-  return (
-    <section className={styles.replanPanel} aria-labelledby="controlled-replan-title">
-      <div className={styles.panelHeading}>
-        <div>
-          <span className={styles.replanEyebrow}>Controlled replan · Policy {policy}</span>
-          <h2 id="controlled-replan-title">Controlled disruption replan</h2>
-          <p>Describe one change and Project TAO will rebuild the schedule, then independently check it before releasing files.</p>
-        </div>
-      </div>
-      <div className={styles.replanCommand}>
-        <label>
-          <span>Disruption instruction</span>
-          <input aria-label="Disruption instruction" value={disruption} disabled={busy} onChange={(event) => setDisruption(event.target.value)} />
-        </label>
-        <button type="button" className={styles.primaryBtn} disabled={busy || !disruption.trim()} onClick={() => void submit()}>
-          {busy ? 'Replanning and validating…' : 'Replan + validate'}
-        </button>
-      </div>
-      <p className={styles.replanExamples}>Accepted forms: <code>block A001 in week 12</code> or <code>delay A001 by 2 weeks</code>.</p>
-      {error ? <p className={styles.intakeError} role="alert">{error} The current validated programme is unchanged.</p> : null}
-      {replanResult ? (
-        <div className={styles.replanResult}>
-          <div className={replanResult.validator_gate.passed ? styles.gatePassed : styles.gateFailed} role="status">
-            <strong>{replanResult.validator_gate.passed ? 'Independent validator passed' : 'Independent validator blocked export'}</strong>
-            <p>{replanResult.explanation}</p>
-          </div>
-          {replanResult.changes.length > 0 ? (
-            <div className={styles.replanDetails}>
-              <h3>Schedule changes</h3>
-              <ul>{replanResult.changes.map((change) => <li key={change.activity_id}><code>{change.activity_id}</code><span>{change.before_weeks.join(', ') || '—'} → {change.after_weeks.join(', ') || '—'}</span></li>)}</ul>
-            </div>
-          ) : <p className={styles.replanNoChange}>No scheduled weeks changed.</p>}
-          {replanResult.validator_gate.soft_warnings.length > 0 ? (
-            <div className={styles.replanDetails}><h3>Advisory warnings</h3><ul>{replanResult.validator_gate.soft_warnings.map((item, index) => <li key={`${item.rule}-${index}`}><code>{item.rule}</code><span>{item.detail}</span></li>)}</ul></div>
-          ) : null}
-          {replanResult.validator_gate.hard_violations.length > 0 ? (
-            <div className={`${styles.replanDetails} ${styles.replanViolations}`}><h3>Hard violations</h3><ul>{replanResult.validator_gate.hard_violations.map((item, index) => <li key={`${item.rule}-${index}`}><code>{item.rule}</code><span>{item.detail}</span></li>)}</ul></div>
-          ) : null}
-          {replanResult.validator_gate.passed && releasedFiles ? (
-            <div className={styles.exportRow}>
-              {OUTPUT_FILES.filter((name) => releasedFiles[name]).map((name) => (
-                <button key={name} type="button" className={styles.ghostBtn} onClick={() => download(`REPLAN_${policy}_${name}`, releasedFiles[name], 'text/csv')}>Download REPLAN_{name}</button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 type ScheduleAccess = { access_seq: number; week: number; eclo: boolean; access_night: number };
 type ScheduleActivity = {
   activity_id: string;
   activity_type: string;
+  contract_number: string;
   startWeek: number;
   endWeek: number;
   accesses: ScheduleAccess[];
@@ -1784,7 +1699,7 @@ function ScheduleWeekGrid({
     <div className={styles.scheduleView}>
       <div className={styles.scheduleViewHead}>
         <h3>By week</h3>
-        <span>{horizonWeeks} weeks · dots are access records</span>
+        <span>{horizonWeeks} weeks · Each dot is one day of work</span>
       </div>
       <div className={styles.scheduleViewBody}>
         <div className={styles.liveGantt} role="region" aria-label="Schedule by week" tabIndex={0}>
@@ -1822,9 +1737,9 @@ function ScheduleWeekGrid({
                 {Array.from({ length: horizonWeeks }, (_, index) => {
                   const week = index + 1;
                   const accesses = activity.accesses.filter((access) => access.week === week);
-                  const occupied = week >= activity.startWeek && week <= activity.endWeek;
+                  const hasWork = accesses.length > 0;
                   const hasEclo = accesses.some((access) => access.eclo);
-                  return <span key={week} className={`${occupied ? styles.liveOccupiedWeek : ''} ${selectedWeek === week ? styles.liveWeekCellSel : ''}`} title={accesses.length ? `${accesses.length} access record(s)${hasEclo ? ' · includes ECLO (1.5× yield)' : ''} · W/C ${formatWeekStart(horizonStart, week)}` : undefined}>{accesses.map((access) => <AccessMark key={access.access_seq} access={access} />)}</span>;
+                  return <span key={week} className={`${hasWork ? styles.liveOccupiedWeek : ''} ${selectedWeek === week ? styles.liveWeekCellSel : ''}`} title={accesses.length ? `${accesses.length} access record(s)${hasEclo ? ' · includes ECLO (1.5× yield)' : ''} · W/C ${formatWeekStart(horizonStart, week)}` : undefined}>{accesses.map((access) => <AccessMark key={access.access_seq} access={access} />)}</span>;
                 })}
               </button>
             );
@@ -1842,6 +1757,7 @@ function ScheduleDayGrid({
   focusedWeek,
   selectedActivity,
   dayNotes,
+  contracts,
   onSelectActivity,
   onStepWeek,
   onOpenDayBubble,
@@ -1854,6 +1770,7 @@ function ScheduleDayGrid({
   focusedWeek: number;
   selectedActivity: string | null;
   dayNotes: Record<string, { day: number; source: 'user' | 'suggested'; reason?: string }>;
+  contracts: Record<string, { accessType: string; nature: string }>;
   onSelectActivity: (id: string) => void;
   onStepWeek: (delta: number) => void;
   onOpenDayBubble: (activityId: string, week: number, anchor: { x: number; y: number }) => void;
@@ -1906,6 +1823,8 @@ function ScheduleDayGrid({
             const accesses = activity.accesses.filter((access) => access.week === focusedWeek);
             const hasEclo = accesses.some((access) => access.eclo);
             const note = dayNotes[`${activity.activity_id}|${focusedWeek}`];
+            const contract = contracts[activity.contract_number];
+            const overlap = contract ? overlapInfo(contract.accessType, contract.nature) : null;
             const openBubbleFor = (anchorEl: HTMLElement) => {
               onSelectActivity(activity.activity_id);
               const rect = anchorEl.getBoundingClientRect();
@@ -1928,6 +1847,7 @@ function ScheduleDayGrid({
                   >
                     <strong>{activity.activity_id}</strong>
                     <small>{activity.activity_type} · {accesses.length} night{accesses.length === 1 ? '' : 's'}</small>
+                    {overlap ? <span className={`${styles.overlapBadge} ${overlap.kind === 'sole' ? styles.overlapSole : styles.overlapShare}`} title={overlap.tip}>{overlap.label}</span> : null}
                     {note != null ? <small className={`${styles.agendaNote} ${note.source === 'suggested' ? styles.agendaNoteSuggested : ''}`} title={note.source === 'suggested' ? `Suggested: ${note.reason ?? ''}` : 'Your pick'}>{formatDayDate(horizonStart, focusedWeek, note.day)}</small> : null}
                   </button>
                   <button
@@ -1988,7 +1908,7 @@ function ScheduleDayGrid({
         >
           {suggestableCount === 0 ? 'Week fully planned' : `Suggest workdays (${suggestableCount} unplanned)`}
         </button>
-        <span>Job-type order: contract priority, Live works, sole possessions — clashing possessions separated, shared possessions kept together, workfronts respected. Your picks are never overwritten.</span>
+          <span>Job-type order: contract priority, Live works, sole possessions — one work per location including buffer zones, shared possessions kept together, workfronts respected. Your picks are never overwritten.</span>
       </div>
     </div>
   );
@@ -2000,7 +1920,6 @@ function LiveResultsScreen({
   inputs,
   files,
   budget,
-  replanBudget,
   resultSelection,
   onRestart,
 }: {
@@ -2009,7 +1928,6 @@ function LiveResultsScreen({
   inputs: Record<string, string>;
   files: Map<string, File>;
   budget: number;
-  replanBudget: number;
   resultSelection: ResultSelection;
   onRestart: () => void;
 }) {
@@ -2017,7 +1935,6 @@ function LiveResultsScreen({
   const initialPolicy = resultSelection === 'best' ? bestPolicy : results.A ? 'A' : bestPolicy;
   const [policy, setPolicy] = useState<PolicyId>(initialPolicy ?? 'A');
   const [selectedActivity, setSelectedActivity] = useState<string | null>(null);
-  const [scheduleViews, setScheduleViews] = useState<Array<'day' | 'week'>>(['day']);
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const [focusedWeek, setFocusedWeek] = useState<number | null>(null);
   const [dayNotes, setDayNotes] = useState<Record<string, { day: number; source: 'user' | 'suggested'; reason?: string }>>({});
@@ -2040,21 +1957,20 @@ function LiveResultsScreen({
   }, [inputs, selectedResult]);
 
   const activities = model?.activities.filter((activity) => activity.accesses.length > 0) ?? [];
+  const contractMap = useMemo(() => {
+    const map: Record<string, { accessType: string; nature: string }> = {};
+    for (const row of parseCsv(inputs['07_PROJECT_DETAILS.csv'] ?? '')) {
+      if (row.contract_number) {
+        map[row.contract_number] = { accessType: row.access_type ?? '', nature: row.nature_of_activity ?? '' };
+      }
+    }
+    return map;
+  }, [inputs]);
   const active = activities.find((activity) => activity.activity_id === selectedActivity) ?? null;
   const activeLocations = new Set(active?.occupiedLocations ?? []);
   const score = selectedResult?.report.soft_scores.objective_score;
   const horizonWeeks = model?.horizonWeeks ?? 30;
   const horizonStart = model?.horizonStart ?? '2027-01-04';
-
-  const toggleScheduleView = (view: 'day' | 'week') => {
-    setScheduleViews((current) => {
-      if (current.includes(view)) {
-        if (current.length === 1) return current;
-        return current.filter((item) => item !== view);
-      }
-      return view === 'day' ? ['day', ...current] : [...current, 'week'];
-    });
-  };
 
   const toggleWeek = (week: number) => {
     setSelectedWeek((current) => (current === week ? null : week));
@@ -2083,7 +1999,9 @@ function LiveResultsScreen({
     });
   };
 
-  const suggestWorkdays = () => {
+  const [dayEngine, setDayEngine] = useState<'cloud' | 'local' | null>(null);
+
+  const suggestWorkdaysLocal = () => {
     const occupancyRows = parseCsv(selectedResult?.files?.['SCHEDULE_OCCUPANCY.csv'] ?? '');
     const occupancyByActivity = new Map<string, Array<{ location: string; group: string }>>();
     for (const row of occupancyRows) {
@@ -2096,6 +2014,7 @@ function LiveResultsScreen({
     for (const row of parseCsv(inputs['07_PROJECT_DETAILS.csv'] ?? '')) {
       contractByNumber.set(row.contract_number, row);
     }
+    const sectorIndex = buildSectorIndex(parseCsv(inputs['03_SECTORS.csv'] ?? ''));
     const candidates = [];
     for (const activity of activities) {
       const weekAccesses = activity.accesses.filter((access) => access.week === dayWeek);
@@ -2117,6 +2036,7 @@ function LiveResultsScreen({
         locations: slots.map((slot) => slot.location),
         groups,
         workfronts: Number(contract.number_of_workfronts) || 99,
+        sectorIndex,
       });
     }
     const picks = recommendWorkdays(candidates);
@@ -2126,6 +2046,47 @@ function LiveResultsScreen({
       for (const pick of picks) next[pick.key] = { day: pick.day, source: 'suggested', reason: pick.reason };
       return next;
     });
+    setDayEngine('local');
+  };
+
+  const suggestWorkdays = async () => {
+    const fixed: Record<string, number> = {};
+    for (const [key, note] of Object.entries(dayNotes)) {
+      if (note.source === 'user') fixed[key] = note.day;
+    }
+    try {
+      const body = new FormData();
+      for (const name of EXPECTED) {
+        const file = files.get(name);
+        if (!file) throw new Error('dataset changed — reload the eight source files');
+        body.append('files', file);
+      }
+      for (const name of ['SCHEDULE_ACCESS.csv', 'SCHEDULE_OCCUPANCY.csv'] as const) {
+        const text = selectedResult?.files?.[name];
+        if (!text) throw new Error('no solved schedule available');
+        body.append('files', new File([text], name, { type: 'text/csv' }));
+      }
+      body.append('strategy', 'spread');
+      body.append('fixed', JSON.stringify(fixed));
+      const response = await fetch('/api/plan-days', { method: 'POST', body });
+      const payload = await response.json();
+      if (!response.ok || payload.status !== 'ok' || !Array.isArray(payload.picks)) {
+        throw new Error(typeof payload?.error?.detail === 'string' ? payload.error.detail : 'day-planning engine unavailable');
+      }
+      setDayNotes((current) => {
+        const next = { ...current };
+        for (const pick of payload.picks) {
+          const key = `${pick.activity_id}|${pick.week}`;
+          if (next[key]?.source === 'user') continue;
+          if (typeof pick.day !== 'number' || pick.day < 0 || pick.day > 6) continue;
+          next[key] = { day: pick.day, source: 'suggested', reason: typeof pick.reason === 'string' ? pick.reason : '' };
+        }
+        return next;
+      });
+      setDayEngine('cloud');
+    } catch {
+      suggestWorkdaysLocal();
+    }
   };
 
   const clearScheduleSelection = () => {
@@ -2138,6 +2099,7 @@ function LiveResultsScreen({
     setFocusedWeek(null);
     setDayNotes({});
     setDayBubble(null);
+    setDayEngine(null);
   };
 
   const weekActivities = selectedWeek == null
@@ -2209,10 +2171,7 @@ function LiveResultsScreen({
           <section className={styles.livePanel}>
             <div className={styles.panelHeading}>
               <div><h2>Schedule</h2><p>Derived from the returned access schedule. Select an activity to highlight its railway footprint, or select a week to highlight its work everywhere.</p></div>
-              <div className={styles.viewToggles} role="group" aria-label="Schedule views">
-                <button type="button" aria-pressed={scheduleViews.includes('day')} onClick={() => toggleScheduleView('day')}>By day</button>
-                <button type="button" aria-pressed={scheduleViews.includes('week')} onClick={() => toggleScheduleView('week')}>By week</button>
-              </div>
+              <span>{activities.length} scheduled activities · {horizonWeeks} weeks</span>
             </div>
             {selectedWeek != null ? (
               <div className={styles.scheduleFocus} role="status">
@@ -2222,66 +2181,32 @@ function LiveResultsScreen({
               </div>
             ) : null}
             <div className={styles.scheduleGrid}>
-              {scheduleViews.includes('day') ? (
-                <ScheduleDayGrid
-                  activities={activities}
-                  horizonWeeks={horizonWeeks}
-                  horizonStart={horizonStart}
+              <ScheduleDayGrid
+                activities={activities}
+                horizonWeeks={horizonWeeks}
+                horizonStart={horizonStart}
                   focusedWeek={dayWeek}
                   selectedActivity={selectedActivity}
                   dayNotes={dayNotes}
-                  onSelectActivity={setSelectedActivity}
-                  onStepWeek={stepWeek}
-                  onOpenDayBubble={(activityId, week, anchor) => setDayBubble({ activityId, week, anchor })}
-                  onPlanDay={planDay}
-                  onSuggest={suggestWorkdays}
-                />
-              ) : null}
-              {scheduleViews.includes('week') ? (
-                <ScheduleWeekGrid
-                  activities={activities}
-                  horizonWeeks={horizonWeeks}
-                  horizonStart={horizonStart}
-                  selectedActivity={selectedActivity}
-                  selectedWeek={selectedWeek}
-                  onSelectActivity={setSelectedActivity}
-                  onToggleWeek={toggleWeek}
-                />
-              ) : null}
+                  contracts={contractMap}
+                onSelectActivity={setSelectedActivity}
+                onStepWeek={stepWeek}
+                onOpenDayBubble={(activityId, week, anchor) => setDayBubble({ activityId, week, anchor })}
+                onPlanDay={planDay}
+                onSuggest={suggestWorkdays}
+              />
+              <ScheduleWeekGrid
+                activities={activities}
+                horizonWeeks={horizonWeeks}
+                horizonStart={horizonStart}
+                selectedActivity={selectedActivity}
+                selectedWeek={selectedWeek}
+                onSelectActivity={setSelectedActivity}
+                onToggleWeek={toggleWeek}
+              />
             </div>
             {dayNoteEntries.length > 0 ? (
-              <div className={styles.dayNotes} aria-label="Planned workdays">
-                <div className={styles.dayNotesHead}>
-                  <strong>Planned workdays ({dayNoteEntries.length})</strong>
-                  <button type="button" className={styles.ghostBtn} onClick={exportDayNotes}>Export day notes (CSV)</button>
-                </div>
-                <ul className={styles.dayNotesList}>
-                  {dayNoteEntries.map(([key, note]) => {
-                    const separator = key.lastIndexOf('|');
-                    const activityId = key.slice(0, separator);
-                    const week = Number(key.slice(separator + 1));
-                    return (
-                      <li key={key} title={note.source === 'suggested' ? `Suggested: ${note.reason ?? ''}` : 'Your pick'}>
-                        <code>{activityId}</code>
-                        <span>Week {week} → {formatDayDate(horizonStart, week, note.day)}</span>
-                        {note.source === 'suggested' ? <em className={styles.noteSource}>Suggested</em> : null}
-                        <button
-                          type="button"
-                          aria-label={`Remove workday note for ${activityId}, week ${week}`}
-                          onClick={() => setDayNotes((current) => {
-                            const next = { ...current };
-                            delete next[key];
-                            return next;
-                          })}
-                        >
-                          ×
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p className={styles.dayNotesFootnote}>Planning notes only — kept out of the eight source files and the validated exports.</p>
-              </div>
+              <p className={styles.scheduleCaption}>Planned workdays live below the railway schematic — open the list to review or export them.</p>
             ) : null}
             <p className={styles.scheduleCaption}>The day view focuses one week at a time — step with the arrows. Nights you have not day-planned sit in To plan; planned nights move onto their weekday. Dots are access records; a dot plus a half-dot is one ECLO night (1.5× yield). The schedule itself never fixes a calendar day. {activities.length} scheduled activities · {horizonWeeks} weeks.</p>
           </section>
@@ -2371,6 +2296,47 @@ function LiveResultsScreen({
               ) : <p>Select an activity in the Gantt to highlight its occupied sectors and platforms.</p>}
             </div>
           </section>
+
+          {dayNoteEntries.length > 0 ? (
+            <section className={styles.dayNotesDrop} aria-label="Planned workdays">
+              <details>
+                <summary>
+                  <strong>Planned workdays ({dayNoteEntries.length})</strong>
+                  <span>Review or export week + day notes</span>
+                </summary>
+                <div className={styles.dayNotesHead}>
+                  <span>{dayNoteEntries.length} note{dayNoteEntries.length === 1 ? '' : 's'}</span>
+                  <button type="button" className={styles.ghostBtn} onClick={exportDayNotes}>Export day notes (CSV)</button>
+                </div>
+                <ul className={styles.dayNotesList}>
+                  {dayNoteEntries.map(([key, note]) => {
+                    const separator = key.lastIndexOf('|');
+                    const activityId = key.slice(0, separator);
+                    const week = Number(key.slice(separator + 1));
+                    return (
+                      <li key={key} title={note.source === 'suggested' ? `Suggested: ${note.reason ?? ''}` : 'Your pick'}>
+                        <code>{activityId}</code>
+                        <span>Week {week} → {formatDayDate(horizonStart, week, note.day)}</span>
+                        {note.source === 'suggested' ? <em className={styles.noteSource}>Suggested</em> : null}
+                        <button
+                          type="button"
+                          aria-label={`Remove workday note for ${activityId}, week ${week}`}
+                          onClick={() => setDayNotes((current) => {
+                            const next = { ...current };
+                            delete next[key];
+                            return next;
+                          })}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className={styles.dayNotesFootnote}>Planning notes only — kept out of the eight source files and the validated exports.{dayEngine == null ? '' : dayEngine === 'cloud' ? ' Planned by the Python engine on the Cloud API.' : ' Planned locally — the cloud engine was unreachable.'}</p>
+              </details>
+            </section>
+          ) : null}
           </>) : (
           <section className={styles.livePanel} aria-label="Why this policy has no schedule">
             <div className={styles.panelHeading}>
@@ -2403,7 +2369,6 @@ function LiveResultsScreen({
               <button type="button" className={styles.linkBtn} onClick={onRestart}>Process another dataset</button>
             </div>
           </section>
-          <ReplanPanel files={files} policy={policy} budget={replanBudget} />
         </>
       ) : <p className={styles.intakeError}>No validated policy result is available.</p>}
     </>
@@ -2514,7 +2479,6 @@ export default function MockupPage() {
   const [files, setFiles] = useState<Map<string, File>>(new Map());
   const [conversionFiles, setConversionFiles] = useState<File[]>([]);
   const [budget, setBudget] = useState(8);
-  const [replanEffort, setReplanEffort] = useState<ReplanEffort>('same');
   const [terminalDetail, setTerminalDetail] = useState<TerminalDetail>('detailed');
   const [resultSelection, setResultSelection] = useState<ResultSelection>('best');
   const [busy, setBusy] = useState(false);
@@ -2739,8 +2703,6 @@ export default function MockupPage() {
     setSettingsReturnScreen(screen === 'settings' || screen === 'welcome' ? 'intake' : screen);
     setScreen('settings');
   };
-  const replanBudget = replanEffort === 'extended' ? Math.min(60, budget * 2) : budget;
-
   return (
     <div className={styles.page}>
       {screen === 'welcome' ? <WelcomeOverlay onDone={() => setScreen('intake')} reduced={reduced} /> : null}
@@ -2799,9 +2761,9 @@ export default function MockupPage() {
           />
         ) : null}
         {screen === 'processing' ? <ProcessingScreen onResults={() => setScreen('results')} busy={busy} logs={logs} results={results} errors={policyErrors} validation={validation} fatalError={error} terminalDetail={terminalDetail} /> : null}
-        {screen === 'results' ? <LiveResultsScreen results={results} errors={policyErrors} inputs={inputTexts} files={files} budget={budget} replanBudget={replanBudget} resultSelection={resultSelection} onRestart={restart} /> : null}
+        {screen === 'results' ? <LiveResultsScreen results={results} errors={policyErrors} inputs={inputTexts} files={files} budget={budget} resultSelection={resultSelection} onRestart={restart} /> : null}
         {screen === 'recovery' && recoveryContext ? <LiveRecoveryScreen context={recoveryContext} onRetry={() => void processDataset()} onBack={restart} onAiRepair={() => { setNeedsAiRepair(true); setScreen('intake'); window.setTimeout(() => document.getElementById('ai-file-repair')?.scrollIntoView({ block: 'start' }), 50); }} /> : null}
-        {screen === 'settings' ? <SettingsScreen budget={budget} onBudget={setBudget} replanEffort={replanEffort} onReplanEffort={setReplanEffort} terminalDetail={terminalDetail} onTerminalDetail={setTerminalDetail} resultSelection={resultSelection} onResultSelection={setResultSelection} onDone={() => setScreen(settingsReturnScreen)} /> : null}
+        {screen === 'settings' ? <SettingsScreen budget={budget} onBudget={setBudget} terminalDetail={terminalDetail} onTerminalDetail={setTerminalDetail} resultSelection={resultSelection} onResultSelection={setResultSelection} onDone={() => setScreen(settingsReturnScreen)} /> : null}
       </main>
     </div>
   );

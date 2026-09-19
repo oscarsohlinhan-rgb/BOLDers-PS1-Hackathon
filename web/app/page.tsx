@@ -1237,13 +1237,13 @@ function PlanningWorkspace({
       </div>
 
       <div className="gantt-section">
-        <div className="planning-section-heading">
-          <div>
-            <h3>Schedule Gantt</h3>
-            <p>Bars show each activity span; dots are the scheduled access records.</p>
+          <div className="planning-section-heading">
+            <div>
+              <h3>Schedule Gantt</h3>
+              <p>Each dot is one day of scheduled work; only weeks containing accesses are highlighted.</p>
+            </div>
+            <span>{activities.length} scheduled activities</span>
           </div>
-          <span>{activities.length} scheduled activities</span>
-        </div>
         <div className="gantt-container" role="region" aria-label="Scrollable activity Gantt chart" tabIndex={0}>
           <svg
             className="gantt-svg"
@@ -1271,9 +1271,8 @@ function PlanningWorkspace({
             <g className="gantt-activities">
               {activities.map((activity, index) => {
                 const y = 66 + index * 34;
-                const x = labelWidth + (activity.startWeek - 1) * weekWidth + 4;
-                const width = Math.max((activity.endWeek - activity.startWeek + 1) * weekWidth - 8, 12);
                 const isSelected = selectedActivity === activity.activity_id;
+                const workWeeks = new Set(activity.accesses.map((access) => access.week));
                 return (
                   <g key={activity.activity_id} className="gantt-bar"
                     onClick={() => setSelectedActivity(activity.activity_id)}
@@ -1285,10 +1284,19 @@ function PlanningWorkspace({
                     <text x="18" y={y + 15} fontSize="11" fill="#163b38" fontWeight="700">
                       {activity.activity_id} · {activity.activity_type}
                     </text>
-                    <rect x={x} y={y} width={width} height="20" rx="10"
-                      fill={isSelected ? "#ffd76a" : "#d6eeea"}
-                      stroke={isSelected ? "#d35f47" : "#79b8ae"}
-                      strokeWidth={isSelected ? 2 : 1} />
+                    {Array.from(workWeeks).map((week) => (
+                      <rect
+                        key={week}
+                        x={labelWidth + (week - 1) * weekWidth + 4}
+                        y={y}
+                        width={Math.max(weekWidth - 8, 12)}
+                        height="20"
+                        rx="10"
+                        fill={isSelected ? "#ffd76a" : "#d6eeea"}
+                        stroke={isSelected ? "#d35f47" : "#79b8ae"}
+                        strokeWidth={isSelected ? 2 : 1}
+                      />
+                    ))}
                     {activity.accesses.map((access) => {
                       const accessX = labelWidth + (access.week - 1) * weekWidth + weekWidth / 2;
                       const dotTitle = `Access ${access.access_seq} · W/C ${formatWeekStart(horizonStart, access.week)} · access night ${access.access_night}${access.eclo ? " · ECLO (1.5× yield)" : ""}`;

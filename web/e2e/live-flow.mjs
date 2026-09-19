@@ -22,7 +22,6 @@ try {
   await page.getByRole('button', { name: 'Skip intro' }).click();
   await page.getByRole('button', { name: 'Open settings' }).click();
   await page.getByLabel('Optimisation seconds per policy').fill('1');
-  await page.getByRole('button', { name: /Extended/ }).click();
   await page.getByRole('button', { name: /Policy A/ }).click();
   await page.getByRole('button', { name: 'Done' }).click();
   await page.getByText('1s per policy', { exact: true }).waitFor();
@@ -45,10 +44,8 @@ try {
   const lineHeight = await lineLabel.evaluate((element) => getComputedStyle(element).lineHeight);
   assert.notEqual(lineHeight, 'normal', 'line names should use explicit readable line spacing');
 
-  await page.getByLabel('Disruption instruction').fill('block A001 in week 30');
-  await page.getByRole('button', { name: 'Replan + validate' }).click();
-  await page.getByText('Independent validator passed', { exact: true }).waitFor({ timeout: 120_000 });
-  assert.equal(await page.getByRole('button', { name: /Download REPLAN_RESULTS\.csv/ }).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Replan + validate' }).count(), 0);
+  assert.equal(await page.getByText('Controlled disruption replan').count(), 0);
 
   const repairPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await repairPage.goto(`${baseUrl}/mockup`, { waitUntil: 'networkidle' });
@@ -79,7 +76,7 @@ try {
   assert.match(await recoveryPage.locator('[class*="aiDisclosure"]').innerText(), /Gemini on Google Cloud Vertex AI/);
   await recoveryPage.close();
 
-  console.log('E2E PASS: solve, replan, recovery/explainer and consent-gated conversion screens');
+  console.log('E2E PASS: solve, recovery/explainer and consent-gated conversion screens');
 } finally {
   await browser.close();
 }

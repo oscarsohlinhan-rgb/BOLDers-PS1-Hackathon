@@ -63,12 +63,11 @@ test('a converted draft must be downloadable, reviewed and deterministically val
   assert.match(page, /User clarification required/);
 });
 
-test('the results workspace runs real disruption replans and gates their exports', () => {
-  assert.match(page, /runReplan/);
-  assert.match(pipeline, /\/api\/replan/);
-  assert.match(page, /Controlled disruption replan/);
-  assert.match(page, /replanResult\.validator_gate\.passed/);
-  assert.match(page, /REPLAN_/);
+test('the results workspace has no disruption-replan panel to confuse operators', () => {
+  assert.doesNotMatch(page, /Controlled disruption replan/);
+  assert.doesNotMatch(page, /ReplanPanel/);
+  assert.doesNotMatch(page, /replanResult\.validator_gate\.passed/);
+  assert.doesNotMatch(page, /Download REPLAN_/);
 });
 
 test('pipeline failures route into a real recovery screen with structured evidence explanations', () => {
@@ -95,10 +94,10 @@ test('solver effort is configured from a dedicated top-navigation settings page'
 });
 
 test('settings expose explained fine-tuning controls that affect the live pipeline', () => {
-  assert.match(page, /Replan effort/);
+  assert.doesNotMatch(page, /Replan effort/);
+  assert.doesNotMatch(page, /replanEffort/);
   assert.match(page, /Pipeline detail/);
   assert.match(page, /Initial policy/);
   assert.match(page, /terminalDetail === 'detailed'/);
-  assert.match(page, /replanEffort === 'extended'/);
   assert.match(page, /resultSelection === 'best'/);
 });

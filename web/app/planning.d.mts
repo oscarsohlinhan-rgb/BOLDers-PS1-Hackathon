@@ -83,6 +83,22 @@ export function formatWeekStart(horizonStart: string, week: number): string;
 export const DAY_NATURE_ORDER: Record<string, number>;
 export const DAY_ACCESS_ORDER: Record<string, number>;
 
+export interface SectorInfo {
+  line: string;
+  bound: string;
+  seq: number;
+}
+
+export function buildSectorIndex(
+  sectors: ParsedCsvRow[],
+): Map<string, SectorInfo>;
+
+export function bufferedFootprint(
+  locations: string[],
+  nature: string | undefined,
+  sectorIndex?: Map<string, SectorInfo>,
+): Set<string>;
+
 export interface WorkdayCandidate {
   key: string;
   activityId: string;
@@ -94,6 +110,7 @@ export interface WorkdayCandidate {
   locations?: string[];
   groups?: Record<string, string>;
   workfronts?: number;
+  sectorIndex?: Map<string, SectorInfo>;
 }
 
 export interface WorkdayPick {

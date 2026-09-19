@@ -81,6 +81,49 @@ test("workday suggestions keep shared possessions together and clashers apart", 
   assert.match(picks.find((pick) => pick.key === "B|5").reason, /Shares b1 possession/);
 });
 
+test("buffer halos expand by nature: Live 2 sectors plus mirror, Consist 1, Others none", () => {
+  const sectors = [1, 2, 3, 4].map((seq) => ({
+    sector_id: `SEC:ALP:S0${seq}_S0${seq + 1}:EB`, line_code: "ALP", seq,
+  })).concat([{ sector_id: "SEC:ALP:S01_S02:WB", line_code: "ALP", seq: 1 }]);
+  const idx = planning.buildSectorIndex(sectors);
+  assert.equal(planning.bufferedFootprint(["SEC:ALP:S02_S03:EB"], "Live", idx).size, 8);
+  assert.equal(planning.bufferedFootprint(["SEC:ALP:S02_S03:EB"], "Non-live (Consist)", idx).size, 3);
+  assert.equal(planning.bufferedFootprint(["SEC:ALP:S02_S03:EB"], "Non-live (Others)", idx).size, 1);
+  assert.ok(planning.bufferedFootprint(["SEC:ALP:S02_S03:EB"], "Live", idx).has("SEC:ALP:S02_S03:WB"));
+});
+
+test("a shared possession never pulls work onto a clashing day", () => {
+  const picks = planning.recommendWorkdays([
+    { key: "A|5", activityId: "A", contractPriority: 1, nature: "Non-live (Consist)", accessType: "C", seq: 1, locations: ["L1"], groups: { L1: "b2" } },
+    { key: "B|5", activityId: "B", contractPriority: 1, nature: "Non-live (Consist)", accessType: "C", seq: 2, locations: ["L1", "L2"], groups: { L1: "b2", L2: "b1" } },
+    { key: "C|5", activityId: "C", contractPriority: 2, nature: "Non-live (Consist)", accessType: "C", seq: 1, locations: ["L2"], groups: { L2: "b9" } },
+  ]);
+  const dayOf = Object.fromEntries(picks.map((pick) => [pick.key, pick.day]));
+  assert.equal(dayOf["A|5"], 0);
+  assert.equal(dayOf["B|5"], 0);
+  assert.equal(dayOf["C|5"], 1);
+});
+
+test("workday suggestions separate buffer halos but share far-apart sectors", () => {
+  const sectors = [1, 2, 3, 4, 5].map((seq) => ({
+    sector_id: `SEC:ALP:S0${seq}_S0${seq + 1}:EB`, line_code: "ALP", seq,
+  }));
+  const idx = planning.buildSectorIndex(sectors);
+  const item = (key, id, loc) => ({
+    key, activityId: id, contractPriority: 2, nature: "Non-live (Consist)",
+    accessType: "C", seq: 1, locations: [loc], groups: {}, sectorIndex: idx,
+  });
+  const picks = planning.recommendWorkdays([
+    item("A|5", "A", "SEC:ALP:S02_S03:EB"),
+    item("B|5", "B", "SEC:ALP:S03_S04:EB"),
+    item("C|5", "C", "SEC:ALP:S05_S06:EB"),
+  ]);
+  const dayOf = Object.fromEntries(picks.map((pick) => [pick.key, pick.day]));
+  assert.notEqual(dayOf["B|5"], dayOf["A|5"]);
+  assert.equal(dayOf["C|5"], dayOf["A|5"]);
+  assert.match(picks.find((pick) => pick.key === "B|5").reason, /Buffer overlap/);
+});
+
 test("workday suggestions separate Live works on a line and respect workfronts", () => {
   const live = (key, id, contract, extra = {}) => ({
     key, activityId: id, contractNumber: contract, contractPriority: 1,
